@@ -67,12 +67,14 @@ export async function proxy(request: NextRequest) {
   // signed-out user's queries would simply return nothing.
   const { pathname } = request.nextUrl;
 
+  // Note /verify is absent on purpose. Straight after sign-up the user has no
+  // session yet — email confirmation is what creates one — so the "check your
+  // inbox" screen has to be reachable while signed out.
   const requiresAuth =
     pathname.startsWith("/dashboard")
     || pathname.startsWith("/listings/new")
     || pathname.startsWith("/bookings")
-    || pathname.startsWith("/admin")
-    || pathname.startsWith("/verify");
+    || pathname.startsWith("/admin");
 
   if (!user && requiresAuth) {
     const loginUrl = request.nextUrl.clone();

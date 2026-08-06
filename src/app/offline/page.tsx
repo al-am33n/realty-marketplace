@@ -35,7 +35,11 @@ export default function OfflinePage() {
       </p>
 
       {/* A plain <a> rather than next/link: client-side navigation needs the
-          app's JavaScript, which is exactly what may not be available here. */}
+          app's JavaScript, which is exactly what may not be available here.
+          A <Link> would try a client-side transition and fail silently, leaving
+          the user tapping a dead button — so the lint rule is wrong for this
+          one page and is disabled deliberately. */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a
         href="/"
         className="mt-8 inline-flex min-h-touch items-center justify-center rounded-lg bg-brand-700 px-6 text-base font-medium text-white transition-colors hover:bg-brand-800"

@@ -295,7 +295,22 @@ export type Database = {
     };
 
     Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Functions: {
+      check_rate_limit: {
+        Args: {
+          p_key: string;
+          p_max_attempts: number;
+          /** Postgres interval as a string, e.g. "15 minutes". */
+          p_window: string;
+        };
+        /** true = still under the limit, false = blocked. */
+        Returns: boolean;
+      };
+      prune_auth_throttle: {
+        Args: Record<never, never>;
+        Returns: number;
+      };
+    };
     Enums: {
       user_role: UserRole;
       listing_type: ListingType;

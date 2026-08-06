@@ -110,11 +110,34 @@ as $$
   select a.id from public.agents a where a.profile_id = (select auth.uid());
 $$;
 
--- Lock these down: they are internal plumbing for policies, not a public API.
-revoke execute on function public.current_user_role()  from public, anon, authenticated;
-revoke execute on function public.is_admin()           from public, anon, authenticated;
-revoke execute on function public.is_verified_active() from public, anon, authenticated;
-revoke execute on function public.my_agent_id()        from public, anon, authenticated;
+-- Function privileges.
+--
+-- Postgres grants EXECUTE on new functions to PUBLIC by default, which is
+-- broader than we want, so that blanket grant is revoked and replaced with an
+-- explicit one.
+--
+-- `authenticated` MUST keep EXECUTE. An RLS policy expression is evaluated with
+-- the privileges of the role running the query, not the table owner — so a
+-- logged-in user querying `listings` is the one calling `is_admin()`. Without
+-- EXECUTE, every policy below fails with "permission denied for function".
+-- (SECURITY DEFINER controls what happens INSIDE the function; it does not
+-- grant the right to call it.)
+--
+-- Handing these to `authenticated` leaks nothing: each one reports only a fact
+-- about the caller themselves, which they already know.
+--
+-- `anon` is deliberately excluded — the two policies that apply to logged-out
+-- visitors (public reads of live listings and active agents) are plain column
+-- comparisons and call no functions at all.
+revoke execute on function public.current_user_role()  from public;
+revoke execute on function public.is_admin()           from public;
+revoke execute on function public.is_verified_active() from public;
+revoke execute on function public.my_agent_id()        from public;
+
+grant execute on function public.current_user_role()  to authenticated;
+grant execute on function public.is_admin()           to authenticated;
+grant execute on function public.is_verified_active() to authenticated;
+grant execute on function public.my_agent_id()        to authenticated;
 
 
 -- ===========================================================================
@@ -472,15 +495,82 @@ create policy "payments: admin reads all"
 
 
 -- ===========================================================================
--- Belt and braces
+-- TABLE GRANTS
 --
--- RLS decides which rows a role may touch, but a role must also hold the
--- ordinary SQL privilege on the table. Postgres checks BOTH. Revoking the
--- blunt privileges we never want means a mistake in a policy above still can't
--- turn into a public data leak.
+-- Two separate gates guard every table, and Postgres checks BOTH:
+--
+--   1. The SQL privilege  — "may this role touch this table at all?"  (GRANT)
+--   2. The RLS policy     — "which ROWS of it may they touch?"        (POLICY)
+--
+-- A perfect set of policies is useless without the grant: the query fails with
+-- "permission denied for table listings" before RLS is ever consulted.
+--
+-- Supabase normally auto-grants these to `anon` and `authenticated` for new
+-- tables in `public`. This project has that automatic exposure switched OFF in
+-- the dashboard, so the grants are written out here instead. That is the safer
+-- arrangement: nothing is reachable from the browser unless this file says so
+-- in as many words, and a table added in a future phase stays invisible until
+-- someone deliberately exposes it.
+--
+-- Each grant below is the narrowest set of verbs the policies above actually
+-- use. Note there is no blanket `grant all` anywhere — DELETE in particular is
+-- withheld wherever the app has no business deleting rows.
 -- ===========================================================================
 
+-- Start from zero so this migration is self-contained and does not depend on
+-- whatever defaults happened to be in effect when the tables were created.
+revoke all on public.profiles from anon, authenticated;
+revoke all on public.agents   from anon, authenticated;
+revoke all on public.listings from anon, authenticated;
+revoke all on public.bookings from anon, authenticated;
+revoke all on public.deals    from anon, authenticated;
 revoke all on public.payments from anon, authenticated;
+
+-- Both roles need to be able to see the schema itself before any table grant
+-- means anything.
+grant usage on schema public to anon, authenticated;
+
+-- profiles — private data. No anon access whatsoever; not even a row count.
+-- No INSERT: profiles are created solely by the handle_new_user trigger, which
+-- runs as SECURITY DEFINER and therefore needs no grant of its own.
+-- No DELETE: profiles are removed by cascade from auth.users.
+grant select, update on public.profiles to authenticated;
+
+-- agents — public trust data (verification badge, rating, coverage area), so
+-- logged-out visitors browsing listings can read it.
+grant select on public.agents to anon;
+grant select, insert, update, delete on public.agents to authenticated;
+
+-- listings — the public search reads these while logged out. The `status =
+-- 'live'` policy is what keeps drafts and pending-review listings invisible.
+grant select on public.listings to anon;
+grant select, insert, update, delete on public.listings to authenticated;
+
+-- bookings — never public. A logged-out visitor has no business knowing which
+-- properties are being viewed, which is also part of the booking-lock story.
+grant select, insert, update, delete on public.bookings to authenticated;
+
+-- deals — never public.
+grant select, insert, update, delete on public.deals to authenticated;
+
+-- payments — READ ONLY, and only your own rows (enforced by the policy).
+-- No INSERT or UPDATE grant for anyone: payment records are written solely by
+-- the Paystack webhook handler using the service role key, which bypasses both
+-- gates. A user cannot mark their own listing fee as paid at any level of the
+-- stack.
 grant select on public.payments to authenticated;
 
-revoke all on public.profiles from anon;
+-- Belt and braces for tables added later in this schema: if a future migration
+-- creates a table and forgets to think about grants, it inherits nothing and
+-- stays unreachable from the browser until someone says otherwise. This mirrors
+-- the dashboard's "expose new tables automatically" being off, so the guarantee
+-- survives even if that toggle is later flipped back on by accident.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+
+-- Deliberately NOT doing the same for functions. Postgres grants EXECUTE on a
+-- new function to PUBLIC, not to `anon`/`authenticated` by name, so revoking
+-- from those two roles would look like a protection while changing nothing —
+-- both roles are members of PUBLIC and would still get in. Any future function
+-- that must not be callable from the browser needs an explicit
+-- `revoke execute on function <name> from public;` of its own, exactly as the
+-- four helper functions above do.

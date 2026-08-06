@@ -1,3 +1,5 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
 # dependencies
 /node_modules
 /.pnp
@@ -14,39 +16,37 @@
 # next.js
 /.next/
 /out/
-next-env.d.ts
 
 # production
 /build
-
-# PWA generated service worker (built artifact, never committed)
-/public/sw.js
-/public/sw.js.map
-/public/workbox-*.js
-/public/workbox-*.js.map
-/public/fallback-*.js
 
 # misc
 .DS_Store
 *.pem
 
-# debug logs
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# SECRETS — never commit these
-.env
-.env*.local
-.env.production
+# SECRETS — never commit these.
+# .env.local holds real API keys (Supabase, Paystack, Cloudinary, Resend).
+# The single most damaging beginner mistake is committing one of these; once a
+# secret is in git history it must be treated as leaked and rotated, even if you
+# delete the file afterwards.
+.env*
+# ...but DO commit the template, which lists the variable NAMES with no values,
+# so the project is reproducible without exposing anything.
+!.env.example
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
+next-env.d.ts
 
-# supabase local dev
+# supabase cli scratch files (migrations themselves ARE committed)
 /supabase/.temp
 /supabase/.branches

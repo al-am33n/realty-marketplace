@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Fix three latent bugs in the schema before first run *)"
+    ]
+  }
+}

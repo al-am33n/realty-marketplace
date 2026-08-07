@@ -224,8 +224,12 @@ create table public.listings (
   -- A listing may only leave draft once it is actually complete. Enforced here
   -- rather than only in the form, because "never trust the client" applies to
   -- our own future code too — a bug in an API route can't bypass this.
+  -- coalesce is essential here. array_length('{}', 1) returns NULL, not 0, and
+  -- a CHECK constraint only rejects FALSE — NULL passes. Without the coalesce
+  -- a listing with NO photos would be allowed out of draft, while one with 1 or
+  -- 2 photos was correctly blocked.
   constraint listings_submittable_requires_photos check (
-    status = 'draft' or array_length(images, 1) >= 3
+    status = 'draft' or coalesce(array_length(images, 1), 0) >= 3
   ),
   constraint listings_submittable_requires_pin check (
     status = 'draft' or (lat is not null and lng is not null)
@@ -260,8 +264,11 @@ create table public.bookings (
   requester_id   uuid not null references public.profiles (user_id) on delete cascade,
   agent_id       uuid references public.agents (id) on delete set null,
 
+  -- Same NULL trap as listings.images: an empty array yields NULL from
+  -- array_length, which a CHECK treats as passing. Without the coalesce a
+  -- viewing could be requested proposing no times at all.
   proposed_slots timestamptz[] not null
-                   check (array_length(proposed_slots, 1) between 1 and 3),
+                   check (coalesce(array_length(proposed_slots, 1), 0) between 1 and 3),
   scheduled_at   timestamptz,
 
   status         public.booking_status not null default 'requested',
@@ -532,9 +539,22 @@ as $$
 declare
   actor_role public.user_role;
 begin
-  -- The service role is trusted backend code (webhooks, admin scripts). It has
-  -- no auth.uid() because it isn't acting as a logged-in person.
-  if auth.role() = 'service_role' then
+  -- Trusted server-side code (the auth callback, Paystack webhooks, admin
+  -- scripts) is identified by the ABSENCE of a logged-in user, rather than by
+  -- auth.role() = 'service_role'. Two reasons:
+  --   * auth.role() is deprecated in Supabase and its result depends on the
+  --     key format in use (legacy anon/service JWTs vs the newer sb_secret_*
+  --     keys). If it ever returned something unexpected, this trigger would
+  --     block the auth callback from setting verified = true — meaning nobody
+  --     could ever verify, and no listing could ever be created.
+  --   * auth.uid() is the same function the RLS policies already depend on, so
+  --     there is one less mechanism that has to keep working.
+  --
+  -- This cannot be abused by an anonymous caller. Reaching this trigger at all
+  -- requires an UPDATE on profiles to match a row, and every UPDATE policy on
+  -- the table resolves through auth.uid() — with no user, no row matches and
+  -- the update affects nothing.
+  if auth.uid() is null then
     return new;
   end if;
 
@@ -578,7 +598,9 @@ as $$
 declare
   actor_role public.user_role;
 begin
-  if auth.role() = 'service_role' then
+  -- Same reasoning as the profiles guard above: no logged-in user means
+  -- trusted server-side code.
+  if auth.uid() is null then
     return new;
   end if;
 

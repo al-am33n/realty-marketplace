@@ -5,10 +5,13 @@ import { redirect } from "next/navigation";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
 import { stepPath } from "@/lib/listings/steps";
 import {
+  commissionClauseSchema,
   listingDetailsSchema,
+  listingLocationSchema,
   toFieldErrors,
   type ListingFormState,
 } from "@/lib/validation/listing";
+import { COMMISSION_CLAUSE_VERSION } from "@/lib/listings/commission-clause";
 
 /**
  * Server Actions for the listing form.
@@ -169,4 +172,107 @@ export async function saveDetailsAction(
 
   revalidatePath(stepPath(listingId, "details"));
   redirect(stepPath(listingId, "photos"));
+}
+
+/** Step 3 — save the address and map pin, then move on to preview. */
+export async function saveLocationAction(
+  listingId: string,
+  _prevState: ListingFormState,
+  formData: FormData
+): Promise<ListingFormState | never> {
+  const raw = {
+    location_text: String(formData.get("location_text") ?? ""),
+    lat: String(formData.get("lat") ?? ""),
+    lng: String(formData.get("lng") ?? ""),
+  };
+  const values = { location_text: raw.location_text, lat: raw.lat, lng: raw.lng };
+
+  const parsed = listingLocationSchema.safeParse(raw);
+  if (!parsed.success) {
+    const fieldErrors = toFieldErrors(parsed.error);
+    // lat/lng are set by the map, not typed, so a validation failure there is
+    // not something the user can fix by editing a field. Say what to do.
+    if (fieldErrors.lat || fieldErrors.lng) {
+      return {
+        ok: false,
+        message: "Please pick the property's position on the map before continuing.",
+        fieldErrors,
+        values,
+      };
+    }
+    return { ok: false, fieldErrors, values };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("listings")
+    .update({
+      location_text: parsed.data.location_text,
+      lat: parsed.data.lat,
+      lng: parsed.data.lng,
+    })
+    .eq("id", listingId)
+    .eq("status", "draft")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[saveLocation]", error.message);
+    return { ok: false, message: "We couldn't save the location. Please try again.", values };
+  }
+  if (!data) {
+    return {
+      ok: false,
+      message: "That listing can no longer be edited. It may already be under review.",
+      values,
+    };
+  }
+
+  revalidatePath(stepPath(listingId, "location"));
+  redirect(stepPath(listingId, "preview"));
+}
+
+/** Step 5 — record agreement to the commission clause. */
+export async function agreeCommissionAction(
+  listingId: string,
+  _prevState: ListingFormState,
+  formData: FormData
+): Promise<ListingFormState | never> {
+  const parsed = commissionClauseSchema.safeParse({
+    agreed: String(formData.get("agreed") ?? ""),
+  });
+
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: toFieldErrors(parsed.error) };
+  }
+
+  const supabase = await createClient();
+
+  // Record WHEN they agreed and to WHICH wording. If the clause text is later
+  // revised, this listing stays bound to the version its owner actually read —
+  // see src/lib/listings/commission-clause.ts.
+  const { data, error } = await supabase
+    .from("listings")
+    .update({
+      commission_clause_agreed_at: new Date().toISOString(),
+      commission_clause_version: COMMISSION_CLAUSE_VERSION,
+    })
+    .eq("id", listingId)
+    .eq("status", "draft")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[agreeCommission]", error.message);
+    return { ok: false, message: "We couldn't record your agreement. Please try again." };
+  }
+  if (!data) {
+    return {
+      ok: false,
+      message: "That listing can no longer be edited. It may already be under review.",
+    };
+  }
+
+  revalidatePath(stepPath(listingId, "terms"));
+  redirect(stepPath(listingId, "payment"));
 }

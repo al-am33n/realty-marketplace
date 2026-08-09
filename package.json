@@ -1,0 +1,36 @@
+{
+  "name": "realty-marketplace",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:push": "node scripts/db-push.mjs",
+    "verify:schema": "node scripts/verify-schema.mjs",
+    "verify:rls": "node scripts/verify-rls.mjs",
+    "verify:e2e": "node scripts/e2e-phase1.mjs",
+    "verify": "npm run verify:schema && npm run verify:rls && npm run verify:e2e"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.2",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0",
+    "pg": "^8.22.0",
+    "supabase": "^2.111.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

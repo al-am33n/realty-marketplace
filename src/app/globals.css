@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Realty Marketplace — design tokens
+   Derived from docs/ui-ux-specification.docx §1.
+
+   A "design token" is a named value (a colour, a spacing step) defined once and
+   referenced everywhere. Writing `bg-brand-700` instead of `bg-[#123a5c]` means
+   that when a shade needs adjusting, it changes in ONE place and every screen
+   follows. It is also what stops the app drifting into slightly-different blues
+   as more screens get built.
+
+   Under Tailwind v4 the theme lives here in CSS (there is no tailwind.config.js
+   any more). Every `--color-x-y` below automatically becomes usable as
+   `bg-x-y`, `text-x-y`, `border-x-y`, etc.
+   ========================================================================== */
+
+@theme {
+  /* ---------------------------------------------------------------------
+     BRAND — deep navy.
+     The spec asks for "navy or forest green rather than generic startup blue",
+     with a feel "closer to a bank or government service". Navy is chosen over
+     forest green for one concrete reason: green is already spoken for as the
+     confirmed/verified/closed-won status colour, and the verification badge is
+     meant to be instantly recognisable. Reusing green for both the brand and a
+     status would blur exactly the signal the product depends on.
+
+     Used for: headers, primary buttons, and the verification badge.
+     --------------------------------------------------------------------- */
+  --color-brand-50:  #eef4f9;
+  --color-brand-100: #d7e5f1;
+  --color-brand-200: #b0cbe3;
+  --color-brand-300: #7fa9cf;
+  --color-brand-400: #4f83b4;
+  --color-brand-500: #326394;
+  --color-brand-600: #244d76;
+  --color-brand-700: #1b3c5e;   /* primary buttons, header background */
+  --color-brand-800: #142e49;
+  --color-brand-900: #0e2135;   /* headings on light backgrounds */
+  --color-brand-950: #08131f;
+
+  /* ---------------------------------------------------------------------
+     SURFACES — warm neutrals, not stark white.
+     Spec: "easier on the eyes for long browsing sessions, and photographs of
+     properties look better against it than pure white." A warm off-white also
+     makes listing photos appear to sit ON the page rather than bleed into it.
+     --------------------------------------------------------------------- */
+  --color-surface:        #faf8f5;   /* page background */
+  --color-surface-raised: #ffffff;   /* cards sitting on top of the page */
+  --color-surface-sunken: #f2eee8;   /* inset areas, disabled fields */
+
+  --color-ink:        #1c1a17;   /* primary body text */
+  --color-ink-muted:  #5c574f;   /* secondary text, labels */
+  --color-ink-subtle: #767066;   /* placeholder, timestamps — 4.63:1 on surface */
+
+  --color-line:       #e5ded4;   /* default borders */
+  --color-line-strong:#cfc5b7;   /* emphasised borders, dividers */
+
+  /* ---------------------------------------------------------------------
+     MONEY — reserved exclusively for financial content.
+     Spec: "One accent color reserved specifically for money-related actions
+     (pay listing fee, commission owed, deal value) — so financial information
+     is visually distinct from general content at a glance."
+
+     Deep gold against navy is the classic institutional-finance pairing, which
+     suits the bank-like register the spec asks for.
+
+     RULE: do not use this colour for anything that is not money. The moment it
+     appears on a non-financial button it stops carrying meaning.
+     --------------------------------------------------------------------- */
+  --color-money:      #8a6410;
+  --color-money-soft: #f7eeda;   /* tinted background for money callouts */
+  --color-money-line: #e3cf9f;
+
+  /* ---------------------------------------------------------------------
+     STATUS — exactly three, used identically everywhere (spec §1.1, §3).
+       success  confirmed / verified / live / closed-won
+       pending  under review / requested
+       danger   rejected / cancelled / closed-lost
+
+     Each has a `-soft` background for status pills and a base tone for text and
+     icons. The base tones all clear 4.5:1 contrast on their own soft
+     background, which is the WCAG AA threshold for body text (spec §5).
+
+     `pending` is deliberately pushed towards orange rather than yellow so it
+     cannot be confused with the gold money accent above.
+     --------------------------------------------------------------------- */
+  --color-success:      #14663c;
+  --color-success-soft: #e3f2e9;
+  --color-success-line: #a8d5bd;
+
+  --color-pending:      #9a4a08;
+  --color-pending-soft: #fdeee0;
+  --color-pending-line: #f0c69c;
+
+  --color-danger:       #a11d1d;
+  --color-danger-soft:  #fbe8e8;
+  --color-danger-line:  #eeb4b4;
+
+  /* ---------------------------------------------------------------------
+     TYPOGRAPHY
+     Spec: "legibility matters more than personality here, especially for users
+     on older/smaller phones and variable connection quality."
+     --------------------------------------------------------------------- */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+               "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* ---------------------------------------------------------------------
+     TOUCH TARGETS
+     Spec §4: "Touch targets sized generously — no small tap zones."
+     44px is the accessibility minimum recommended by both Apple and the WCAG
+     target-size guidance. Exposed as `min-h-touch` / `min-w-touch` so it never
+     has to be remembered as a magic number.
+     --------------------------------------------------------------------- */
+  --spacing-touch: 2.75rem;   /* 44px */
+}
+
+/* ==========================================================================
+   Base styles
+   ========================================================================== */
+
+:root {
+  /* Light only, deliberately. Dark mode is not in the spec, and a half-finished
+     dark theme looks less trustworthy than none — the warm off-white background
+     is a stated design decision that property photography is tuned against.
+     Declaring this stops browsers auto-darkening form controls. */
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* Prevent iOS Safari inflating text in landscape, which breaks form layouts. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Prices and other figures line up in columns when digits are the same width.
+   Applied via `class="tabular"` on any element showing money or counts —
+   directly serves the spec's "property prices should be immediately scannable
+   in a list view". */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A visible, high-contrast focus ring for keyboard and switch-control users.
+   `:focus-visible` shows it for keyboard navigation but not on mouse clicks,
+   so it aids accessibility without looking noisy. */
+:focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Respect users who have asked their device to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Screen-reader-only text. Spec §5: "Every icon-only button (report, favorite,
+   map pin) has a text label available to screen readers even if visually
+   hidden." This class is how that label gets attached. */
+.sr-only-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}

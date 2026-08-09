@@ -50,3 +50,7 @@ next-env.d.ts
 # supabase cli scratch files (migrations themselves ARE committed)
 /supabase/.temp
 /supabase/.branches
+
+# Claude Code personal settings (machine-specific permission allowlists).
+# .claude/settings.json IS committed when it holds shared project config.
+.claude/settings.local.json

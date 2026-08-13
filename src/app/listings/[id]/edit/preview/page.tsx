@@ -4,12 +4,13 @@ import { ListingStepper } from "@/components/listings/listing-stepper";
 import { Alert } from "@/components/ui/alert";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { loadEditableListing } from "@/lib/listings/load";
-import { stepCompletion, stepPath } from "@/lib/listings/steps";
+import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
 import {
   LISTING_TYPE_LABELS,
   PROPERTY_TYPE_LABELS,
 } from "@/lib/validation/listing";
 import { formatNaira } from "@/lib/utils";
+import { SubmitForReview } from "./submit-for-review";
 
 export const metadata: Metadata = {
   title: "Preview your listing",
@@ -125,12 +126,21 @@ export default async function ListingPreviewStep({
         </div>
       </article>
 
+      {/* Once every step is done, the listing can go straight to review from
+          here rather than making the owner walk back through steps they have
+          already completed. */}
+      {readyToSubmit(listing) && (
+        <div className="mt-8">
+          <SubmitForReview listingId={listing.id} />
+        </div>
+      )}
+
       <div className="mt-8 flex flex-col gap-3">
         <Link
           href={stepPath(listing.id, "terms")}
           className="inline-flex min-h-touch items-center justify-center rounded-lg bg-brand-700 px-6 text-base font-medium text-white hover:bg-brand-800"
         >
-          Looks right — continue
+          {readyToSubmit(listing) ? "Review the terms again" : "Looks right — continue"}
         </Link>
         <Link
           href={stepPath(listing.id, "details")}

@@ -170,6 +170,23 @@ export const commissionClauseSchema = z.object({
     }),
 });
 
+/**
+ * Admin rejection. The reason is mandatory in the database too
+ * (listings_rejected_requires_reason), because app-flow.docx §5 sends it
+ * straight to the landlord — a rejection with no explanation is a dead end for
+ * someone who cannot see the queue and has no way to guess what was wrong.
+ *
+ * The minimum length is not bureaucracy: "no" is technically a reason and
+ * helps nobody.
+ */
+export const rejectListingSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(15, "Explain what needs changing — the landlord only sees this message")
+    .max(1000, "Keep the reason under 1000 characters"),
+});
+
 export type ListingDetailsInput = z.infer<typeof listingDetailsSchema>;
 export type ListingLocationInput = z.infer<typeof listingLocationSchema>;
 

@@ -16,10 +16,18 @@ import type { Listing } from "@/lib/supabase/database.types";
  * the one case RLS deliberately allows through: a live listing owned by
  * somebody else, which the owner-only edit flow must still refuse.
  */
-export async function loadOwnedListing(listingId: string): Promise<Listing> {
+export async function loadOwnedListing(
+  listingId: string,
+  /**
+   * Where to send the user after signing in. Callers pass their own path so a
+   * signed-out visitor returns to the page they actually asked for — without
+   * it, someone opening a status link would be dropped into the edit form.
+   */
+  returnTo = `/listings/${listingId}/edit/details`
+): Promise<Listing> {
   const { user } = await getCurrentProfile();
   if (!user) {
-    redirect(`/login?next=/listings/${listingId}/edit/details`);
+    redirect(`/login?next=${encodeURIComponent(returnTo)}`);
   }
 
   const supabase = await createClient();
@@ -42,16 +50,26 @@ export async function loadOwnedListing(listingId: string): Promise<Listing> {
 }
 
 /**
- * Same, but also insists the listing is still editable.
+ * Statuses whose owner may still edit them.
  *
- * Once a listing is submitted it belongs to the review queue, and the RLS
- * update policy would refuse the write anyway — this just turns that into a
- * clear redirect instead of a confusing failed save.
+ * `rejected` is included so an owner can act on the reviewer's feedback — the
+ * whole point of rejecting with a reason is that the listing gets fixed and
+ * resubmitted. `pending_review` is excluded: once submitted, a listing belongs
+ * to the review queue, and letting it change underneath the reviewer would mean
+ * they approved something other than what goes live.
+ */
+export const EDITABLE_STATUSES = ["draft", "rejected"] as const;
+
+/**
+ * Same as loadOwnedListing, but also insists the listing is still editable.
+ *
+ * The RLS update policy would refuse a write to a locked listing anyway — this
+ * turns that into a clear redirect instead of a confusing failed save.
  */
 export async function loadEditableListing(listingId: string): Promise<Listing> {
   const listing = await loadOwnedListing(listingId);
 
-  if (listing.status !== "draft") {
+  if (!(EDITABLE_STATUSES as readonly string[]).includes(listing.status)) {
     redirect(`/listings/${listingId}/status`);
   }
 

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
-import { stepPath } from "@/lib/listings/steps";
+import { EDITABLE_STATUSES } from "@/lib/listings/load";
+import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
 import {
   commissionClauseSchema,
   listingDetailsSchema,
@@ -153,7 +154,7 @@ export async function saveDetailsAction(
       description: parsed.data.description,
     })
     .eq("id", listingId)
-    .eq("status", "draft")
+    .in("status", [...EDITABLE_STATUSES])
     .select("id")
     .maybeSingle();
 
@@ -212,7 +213,7 @@ export async function saveLocationAction(
       lng: parsed.data.lng,
     })
     .eq("id", listingId)
-    .eq("status", "draft")
+    .in("status", [...EDITABLE_STATUSES])
     .select("id")
     .maybeSingle();
 
@@ -258,7 +259,7 @@ export async function agreeCommissionAction(
       commission_clause_version: COMMISSION_CLAUSE_VERSION,
     })
     .eq("id", listingId)
-    .eq("status", "draft")
+    .in("status", [...EDITABLE_STATUSES])
     .select("id")
     .maybeSingle();
 
@@ -275,4 +276,91 @@ export async function agreeCommissionAction(
 
   revalidatePath(stepPath(listingId, "terms"));
   redirect(stepPath(listingId, "payment"));
+}
+
+/**
+ * Submits a finished listing for manual review.
+ *
+ * This is the moment the listing leaves the owner's hands: status moves to
+ * `pending_review`, and from then on only an admin can set it live. That
+ * one-way door is what makes "every listing manually reviewed before going
+ * live" a real guarantee rather than a policy statement — the RLS update policy
+ * refuses `live` to anyone but an admin.
+ *
+ * Readiness is checked here for a good error message, and again by the database
+ * CHECK constraints, which are the actual enforcement. Both matter: the
+ * constraints cannot produce a sentence a landlord can act on, and this check
+ * cannot be trusted, because a request could be crafted to skip it.
+ */
+// Declares only the bound listingId: once bound, the result is a zero-argument
+// function, which is still assignable to what useActionState expects. No point
+// naming parameters this never reads.
+export async function submitForReviewAction(
+  listingId: string
+): Promise<ListingFormState | never> {
+  const supabase = await createClient();
+
+  const { data: listing, error: loadError } = await supabase
+    .from("listings")
+    .select("*")
+    .eq("id", listingId)
+    .maybeSingle();
+
+  if (loadError || !listing) {
+    return { ok: false, message: "We couldn't find that listing." };
+  }
+
+  if (!(EDITABLE_STATUSES as readonly string[]).includes(listing.status)) {
+    return {
+      ok: false,
+      message:
+        listing.status === "pending_review"
+          ? "This listing has already been submitted — we're reviewing it now."
+          : "This listing can no longer be submitted.",
+    };
+  }
+
+  if (!readyToSubmit(listing)) {
+    const done = stepCompletion(listing);
+    const missing: string[] = [];
+    if (!done.details) missing.push("the property details");
+    if (!done.photos) missing.push("at least 3 photos");
+    if (!done.location) missing.push("the location and map pin");
+    if (!done.terms) missing.push("the commission agreement");
+    if (!done.payment) missing.push("the listing fee");
+
+    return {
+      ok: false,
+      message: `Before submitting, please finish ${missing.join(", ")}.`,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("listings")
+    .update({
+      status: "pending_review",
+      // Clear any previous reviewer feedback: it referred to the old version,
+      // and leaving it would show stale "what needs changing" text against a
+      // listing that has since been fixed.
+      rejection_reason: null,
+    })
+    .eq("id", listingId)
+    .in("status", [...EDITABLE_STATUSES])
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[submitForReview]", error.message);
+    return {
+      ok: false,
+      message: "We couldn't submit the listing. Please check the details and try again.",
+    };
+  }
+
+  if (!data) {
+    return { ok: false, message: "This listing can no longer be submitted." };
+  }
+
+  revalidatePath("/dashboard");
+  redirect(`/listings/${listingId}/status?submitted=1`);
 }

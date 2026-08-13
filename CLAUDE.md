@@ -75,8 +75,10 @@ Merge each feature branch to `main` only after its own end-to-end test pass. Don
 - Commission-funded referral incentives (landlord-refers-landlord, agent-refers-landlord).
 - Diaspora-focused positioning in marketing copy where relevant ("verified for Nigerians abroad").
 
+## Settled during the build
+- **Commission clause enforceability window: 6 months** (decided in Phase 2, was open between 6 and 12). Runs from the date of introduction — normally the viewing — and each introduced person has their own separate window. The reason to state a window at all is that an unbounded claim is the *weakest* version of the term, not the strongest: an indefinite hold over someone's property reads as unreasonable and is what a court is most willing to read down. Lives in `src/lib/listings/commission-clause.ts` as `COMMISSION_WINDOW_MONTHS`; changing it means a new clause version, since `listings.commission_clause_version` binds each listing to the wording its owner actually read. **Still needs review by a Nigerian lawyer before real money depends on it.**
+
 ## Still open (ask the user, don't assume)
-- Exact enforceability window for the commission clause after a viewing (6 vs 12 months).
 - Whether to revisit a deposit model later if commission-dodging proves to be a frequent real problem.
 - Exact trigger for the Supabase Pro upgrade (listing-count/revenue threshold vs. calendar date).
 

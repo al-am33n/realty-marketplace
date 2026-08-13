@@ -32,30 +32,55 @@ export const COMMISSION_CLAUSE_VERSION = "v1";
  * defensible if it is not.
  *
  * NOT LEGAL ADVICE: this wording should be reviewed by a Nigerian lawyer before
- * real money depends on it. The enforceability window in particular (6 vs 12
- * months) is still an open question in the project brief.
+ * real money depends on it.
  */
+
+/**
+ * How long after an introduction the commission claim survives.
+ *
+ * Settled at 6 months (the brief left this open between 6 and 12). The reason
+ * to state a window at all is that a claim with NO limit is the weakest version
+ * of this term, not the strongest: an indefinite hold over someone's property
+ * reads as unreasonable and is the kind of term a court is most willing to read
+ * down. A stated, moderate window is far more defensible than an unbounded one.
+ *
+ * Exported as a constant so the number appears once. If it ever changes, that
+ * is a NEW clause version — see the versioning note above.
+ */
+export const COMMISSION_WINDOW_MONTHS = 6;
+
 export const COMMISSION_CLAUSE = {
   version: COMMISSION_CLAUSE_VERSION,
   title: "Commission agreement",
   summary:
-    "If we introduce someone to your property and a deal closes with that "
-    + "person, our commission is owed — even if the paperwork happens "
-    + "elsewhere.",
+    "If we introduce someone to your property and you agree a deal with that "
+    + `person within ${COMMISSION_WINDOW_MONTHS} months, our commission is owed `
+    + "— even if the paperwork happens elsewhere.",
   terms: [
     {
       heading: "What you are agreeing to",
       body:
-        "If Realty Marketplace introduces a renter or buyer to this property "
-        + "and a rental or sale is agreed with that person, you agree to pay "
-        + "our commission on that deal.",
+        "If Realty Marketplace introduces a renter or buyer to this property, "
+        + "and you agree a rental or sale with that person within "
+        + `${COMMISSION_WINDOW_MONTHS} months of that introduction, you agree `
+        + "to pay our commission on that deal.",
+    },
+    {
+      heading: `The ${COMMISSION_WINDOW_MONTHS}-month limit`,
+      body:
+        `The ${COMMISSION_WINDOW_MONTHS} months run from the date we introduce `
+        + "the person to your property — normally the day of their viewing. "
+        + "After that, no commission is owed to us for that person, and you are "
+        + "free to deal with them however you like. Each person we introduce "
+        + "has their own separate window.",
     },
     {
       heading: "This applies even if the deal happens off the platform",
       body:
-        "The commission is owed because we made the introduction, not because "
-        + "the paperwork ran through our website. Completing the deal privately "
-        + "with someone we introduced does not remove what is owed.",
+        "Within that window, the commission is owed because we made the "
+        + "introduction, not because the paperwork ran through our website. "
+        + "Completing the deal privately with someone we introduced does not "
+        + "remove what is owed.",
     },
     {
       heading: "How much it is",

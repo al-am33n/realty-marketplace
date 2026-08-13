@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
 import { EDITABLE_STATUSES } from "@/lib/listings/load";
+import { CLOUDINARY_CLOUD_NAME, MAX_PHOTOS_PER_LISTING, listingFolder } from "@/lib/cloudinary";
 import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
 import {
   commissionClauseSchema,
@@ -363,4 +364,77 @@ export async function submitForReviewAction(
 
   revalidatePath("/dashboard");
   redirect(`/listings/${listingId}/status?submitted=1`);
+}
+
+/**
+ * Step 2 — save the listing's photo URLs.
+ *
+ * The browser uploads directly to Cloudinary and sends back the resulting URLs,
+ * so this validates that what came back genuinely belongs to our Cloudinary
+ * account and to THIS listing's folder. Without that check, a crafted request
+ * could point a listing's photos at any URL on the internet — including an
+ * image that later changes to something else entirely, on someone else's
+ * server, after a human has reviewed and approved the listing.
+ */
+export async function savePhotosAction(
+  listingId: string,
+  images: string[]
+): Promise<ListingFormState> {
+  const { user } = await getCurrentProfile();
+  if (!user) return { ok: false, message: "Please sign in again." };
+
+  if (!Array.isArray(images)) {
+    return { ok: false, message: "We couldn't save those photos." };
+  }
+
+  if (images.length > MAX_PHOTOS_PER_LISTING) {
+    return {
+      ok: false,
+      message: `You can add up to ${MAX_PHOTOS_PER_LISTING} photos per listing.`,
+    };
+  }
+
+  // Must be an https URL, on OUR Cloudinary account, inside THIS listing's
+  // folder. The folder check is what stops one listing's photos being attached
+  // to another.
+  const expectedPrefix = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/`;
+  const expectedFolder = listingFolder(listingId);
+
+  const invalid = images.filter(
+    (src) =>
+      typeof src !== "string"
+      || !src.startsWith(expectedPrefix)
+      || !src.includes(expectedFolder)
+  );
+
+  if (invalid.length > 0) {
+    console.error("[savePhotos] rejected non-Cloudinary or wrong-folder URLs", {
+      listingId,
+      count: invalid.length,
+    });
+    return { ok: false, message: "We couldn't save those photos. Please try again." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("listings")
+    .update({ images })
+    .eq("id", listingId)
+    .in("status", [...EDITABLE_STATUSES])
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[savePhotos]", error.message);
+    return { ok: false, message: "We couldn't save those photos. Please try again." };
+  }
+  if (!data) {
+    return {
+      ok: false,
+      message: "That listing can no longer be edited. It may already be under review.",
+    };
+  }
+
+  revalidatePath(stepPath(listingId, "photos"));
+  return { ok: true };
 }

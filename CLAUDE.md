@@ -67,6 +67,7 @@ Merge each feature branch to `main` only after its own end-to-end test pass. Don
 - Self-review checklist required before merging any change touching payments, bookings, or commission logic (stand-in for code review on a solo build) — from Phase 2 onward.
 - Rate-limit login and OTP-request endpoints.
 - Secrets only in environment variables, never committed.
+- **Push to GitHub after every commit, not just commit locally.** A commit alone only saves history on this machine — GitHub stays out of date until an explicit `git push` runs. Treat "commit and push" as one combined step, not two separate ones to be asked about separately.
 - **Run `npm run verify` (schema + RLS + end-to-end) after any migration, before merging any phase branch** — a schema catalog can look entirely correct (RLS enabled, grants present, constraints defined) while still failing in practice. Phase 1 caught three real bugs this way that were invisible on paper: missing service_role grants, RLS policy recursion across tables, and a NULL-handling trap in a CHECK constraint. Only acting as a real signed-in user surfaced any of them. Cross-table policy checks always go through a SECURITY DEFINER helper function, never an inline subquery — the recursion pattern that caused the second bug.
 
 ## Growth mechanics (zero cash cost, build when there's time)

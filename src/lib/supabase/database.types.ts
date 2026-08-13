@@ -310,6 +310,35 @@ export type Database = {
         Args: Record<never, never>;
         Returns: number;
       };
+      /**
+       * Atomically claims a first-50 listing fee waiver.
+       * TABLE-returning, so Supabase hands back an array with one row.
+       */
+      claim_listing_fee_waiver: {
+        Args: { p_listing_id: string };
+        Returns: Array<{
+          granted: boolean;
+          waivers_used: number;
+          waiver_cap: number;
+          reason:
+            | "granted"
+            | "already_waived"
+            | "pool_exhausted"
+            | "owner_has_open_waiver"
+            | "not_owner"
+            | "not_editable"
+            | "not_found";
+        }>;
+      };
+      /** Read-only pool state, safe to call without consuming a waiver. */
+      listing_fee_waiver_status: {
+        Args: Record<never, never>;
+        Returns: Array<{
+          waivers_used: number;
+          waiver_cap: number;
+          waivers_left: number;
+        }>;
+      };
     };
     Enums: {
       user_role: UserRole;

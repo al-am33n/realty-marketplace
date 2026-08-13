@@ -438,3 +438,62 @@ export async function savePhotosAction(
   revalidatePath(stepPath(listingId, "photos"));
   return { ok: true };
 }
+
+/**
+ * Step 6 — claim a first-50 listing fee waiver.
+ *
+ * All the real work happens inside the claim_listing_fee_waiver database
+ * function, deliberately. Counting the waivers used and then writing one is two
+ * steps, and two landlords arriving at the same moment would both read the same
+ * remaining count and both be granted the last waiver. The function does it
+ * inside an advisory lock so that cannot happen — see the migration for the
+ * full reasoning.
+ *
+ * This action's job is only to translate the outcome into something the
+ * landlord can act on.
+ */
+export async function claimFeeWaiverAction(
+  listingId: string
+): Promise<ListingFormState> {
+  const { user } = await getCurrentProfile();
+  if (!user) return { ok: false, message: "Please sign in again." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("claim_listing_fee_waiver", {
+    p_listing_id: listingId,
+  });
+
+  if (error) {
+    console.error("[claimFeeWaiver]", error.message);
+    return { ok: false, message: "We couldn't apply the free listing. Please try again." };
+  }
+
+  const result = Array.isArray(data) ? data[0] : undefined;
+  if (!result) {
+    return { ok: false, message: "We couldn't apply the free listing. Please try again." };
+  }
+
+  if (result.granted) {
+    revalidatePath(stepPath(listingId, "payment"));
+    return { ok: true };
+  }
+
+  // Every branch says what happened AND what to do about it. "Pool exhausted"
+  // in particular is not the landlord's fault and must not read like a refusal.
+  const messages: Record<string, string> = {
+    pool_exhausted:
+      "Our first 50 free listings have all been taken. A listing fee applies to "
+      + "this one — we'll have payment available shortly.",
+    owner_has_open_waiver:
+      "You already have another unfinished listing using a free listing. Finish "
+      + "and submit that one first, then this listing can use the next.",
+    not_owner: "You can only do this on your own listings.",
+    not_editable: "This listing can no longer be edited. It may already be under review.",
+    not_found: "We couldn't find that listing.",
+  };
+
+  return {
+    ok: false,
+    message: messages[result.reason] ?? "We couldn't apply the free listing.",
+  };
+}

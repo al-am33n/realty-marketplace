@@ -231,10 +231,10 @@ try {
   check("another signed-in user also sees 0", otherUserRows.length === 0, `saw ${otherUserRows.length}`);
 
   console.log("\n9. The 3-photo minimum actually holds");
-  // Satisfy the OTHER two submission constraints first (map pin, commission
-  // clause) so the photo count is the only thing left that can fail —
-  // otherwise Postgres reports whichever constraint it hits first and we would
-  // not really be testing the photo rule.
+  // Satisfy every OTHER submission constraint first (map pin, commission
+  // clause, settled fee) so the photo count is the only thing left that can
+  // fail — otherwise Postgres reports whichever constraint it hits first and we
+  // would not really be testing the photo rule.
   await fetch(`${url}/rest/v1/listings?id=eq.${createdListingId}`, {
     method: "PATCH",
     headers: asUser(verifiedToken),
@@ -244,6 +244,13 @@ try {
       commission_clause_agreed_at: new Date().toISOString(),
       commission_clause_version: "v1",
     }),
+  });
+  // The fee has to go through the service role: as of Phase 2 a guard trigger
+  // stops owners writing fee_waived themselves, which is the whole point of it.
+  await fetch(`${url}/rest/v1/listings?id=eq.${createdListingId}`, {
+    method: "PATCH",
+    headers: svcH,
+    body: JSON.stringify({ fee_waived: true }),
   });
 
   for (const [label, images] of [
@@ -278,13 +285,22 @@ try {
   );
 
   console.log("\n10. Cleanup");
+  const testUserIds = [...createdUserIds];
   await cleanup();
-  const leftover = await fetch(`${url}/rest/v1/profiles?select=user_id`, { headers: svcH });
+
+  // Check only the accounts THIS run created are gone. An earlier version
+  // asserted the profiles table was empty, which quietly assumed a fresh
+  // database — it started failing the moment real accounts existed, and would
+  // have been a standing false alarm from then on.
+  const leftover = await fetch(
+    `${url}/rest/v1/profiles?select=user_id&user_id=in.(${testUserIds.join(",")})`,
+    { headers: svcH }
+  );
   const leftoverRows = await leftover.json();
   check(
     "all test users removed",
     Array.isArray(leftoverRows) && leftoverRows.length === 0,
-    `${leftoverRows.length} profile(s) remain`
+    `${Array.isArray(leftoverRows) ? leftoverRows.length : "?"} test profile(s) remain`
   );
 
   finish("PHASE 1 END-TO-END");

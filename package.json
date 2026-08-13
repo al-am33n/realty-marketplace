@@ -11,7 +11,8 @@
     "verify:schema": "node scripts/verify-schema.mjs",
     "verify:rls": "node scripts/verify-rls.mjs",
     "verify:e2e": "node scripts/e2e-phase1.mjs",
-    "verify": "npm run verify:schema && npm run verify:rls && npm run verify:e2e"
+    "verify": "npm run verify:schema && npm run verify:rls && npm run verify:e2e",
+    "promote-admin": "node scripts/promote-admin.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

@@ -376,7 +376,92 @@ try {
     JSON.stringify(overCap.body)?.slice(0, 120)
   );
 
-  console.log("\n7. Cleanup");
+  console.log("\n7. Payment recording is idempotent");
+  // Paystack delivers the same webhook more than once — on timeout, on a
+  // non-2xx response, sometimes just because an ack was slow. A handler that
+  // checks "already processed?" and then writes has a window where two
+  // simultaneous deliveries both see "no". record_listing_fee_payment does it
+  // in one statement so that window does not exist.
+  const payUserEmail = `p2.payer.${stamp}@example.com`;
+  const payUserId = await createUser(payUserEmail, PASSWORD, {
+    full_name: "Paying Landlord",
+    role: "landlord",
+  });
+  const payListingId = await createCompleteListing(payUserId);
+  const ref = `listing_${payListingId}_${stamp}`;
+
+  const recordPayment = () =>
+    fetch(`${url}/rest/v1/rpc/record_listing_fee_payment`, {
+      method: "POST",
+      headers: svcH,
+      body: JSON.stringify({
+        p_paystack_ref: ref,
+        p_user_id: payUserId,
+        p_listing_id: payListingId,
+        p_amount_kobo: 500000,
+        p_payload: { event: "charge.success", test: true },
+      }),
+    }).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+  const firstDelivery = await recordPayment();
+  check(
+    "first delivery is processed",
+    firstDelivery.body?.[0]?.newly_processed === true,
+    JSON.stringify(firstDelivery.body)?.slice(0, 120)
+  );
+
+  const paidRow = await fetch(
+    `${url}/rest/v1/listings?id=eq.${payListingId}&select=listing_fee_paid`,
+    { headers: svcH }
+  ).then((r) => r.json());
+  check("  ...and marks the listing fee paid", paidRow?.[0]?.listing_fee_paid === true);
+
+  // Fire several duplicates at once, exactly as a retry storm would.
+  const duplicates = await Promise.all([recordPayment(), recordPayment(), recordPayment()]);
+  const reprocessed = duplicates.filter((d) => d.body?.[0]?.newly_processed === true).length;
+  check(
+    "3 duplicate deliveries are all recognised as duplicates",
+    reprocessed === 0,
+    `${reprocessed} were wrongly reprocessed`
+  );
+
+  const paymentRows = await fetch(
+    `${url}/rest/v1/payments?paystack_ref=eq.${ref}&select=id,amount_kobo,status`,
+    { headers: svcH }
+  ).then((r) => r.json());
+  check(
+    "exactly ONE payment row exists for the reference",
+    Array.isArray(paymentRows) && paymentRows.length === 1,
+    `${Array.isArray(paymentRows) ? paymentRows.length : "?"} rows`
+  );
+  check("  ...recorded as success", paymentRows?.[0]?.status === "success");
+
+  // A signed-in user must never be able to mark their own fee paid.
+  const payerToken = await signIn(payUserEmail, PASSWORD);
+  const selfRecord = await fetch(`${url}/rest/v1/rpc/record_listing_fee_payment`, {
+    method: "POST",
+    headers: asUser(payerToken),
+    body: JSON.stringify({
+      p_paystack_ref: `forged_${stamp}`,
+      p_user_id: payUserId,
+      p_listing_id: payListingId,
+      p_amount_kobo: 500000,
+      p_payload: {},
+    }),
+  });
+  check(
+    "a signed-in user cannot record a payment themselves",
+    selfRecord.status >= 400,
+    `HTTP ${selfRecord.status}`
+  );
+
+  // Clean up the payment row directly — it is not covered by listing cleanup.
+  await fetch(`${url}/rest/v1/payments?paystack_ref=eq.${ref}`, {
+    method: "DELETE",
+    headers: svcH,
+  });
+
+  console.log("\n8. Cleanup");
   await cleanup();
   createdListingIds.length = 0;
   createdUserIds.length = 0;

@@ -339,6 +339,21 @@ export type Database = {
           waivers_left: number;
         }>;
       };
+      /**
+       * Records a listing fee payment idempotently.
+       * `newly_processed` is false when the reference was already recorded —
+       * i.e. a duplicate webhook delivery, which Paystack does routinely.
+       */
+      record_listing_fee_payment: {
+        Args: {
+          p_paystack_ref: string;
+          p_user_id: string;
+          p_listing_id: string;
+          p_amount_kobo: number;
+          p_payload: Json;
+        };
+        Returns: Array<{ newly_processed: boolean; payment_id: string }>;
+      };
     };
     Enums: {
       user_role: UserRole;

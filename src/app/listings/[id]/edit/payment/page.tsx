@@ -3,6 +3,8 @@ import { ListingStepper } from "@/components/listings/listing-stepper";
 import { createClient } from "@/lib/supabase/server";
 import { loadEditableListing } from "@/lib/listings/load";
 import { readyToSubmit, stepCompletion } from "@/lib/listings/steps";
+import { LISTING_FEE_KOBO, paystackConfigured } from "@/lib/paystack";
+import { formatNaira } from "@/lib/utils";
 import { PaymentForm } from "./payment-form";
 
 export const metadata: Metadata = {
@@ -21,8 +23,10 @@ export const metadata: Metadata = {
  */
 export default async function ListingPaymentStep({
   params,
+  searchParams,
 }: PageProps<"/listings/[id]/edit/payment">) {
   const { id } = await params;
+  const query = await searchParams;
   const listing = await loadEditableListing(id);
 
   // Read-only pool state. A separate function from the claim on purpose —
@@ -57,6 +61,9 @@ export default async function ListingPaymentStep({
         waiversLeft={waiversLeft}
         canSubmit={readyToSubmit(listing)}
         missing={missing}
+        feeLabel={formatNaira(LISTING_FEE_KOBO)}
+        paymentAvailable={paystackConfigured()}
+        returnedFromPaystack={query.from === "paystack"}
       />
 
       <p className="mt-8 text-sm text-ink-subtle">

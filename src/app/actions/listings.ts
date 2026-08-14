@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { createClient, getCurrentProfile } from "@/lib/supabase/server";
 import { EDITABLE_STATUSES } from "@/lib/listings/load";
 import { CLOUDINARY_CLOUD_NAME, MAX_PHOTOS_PER_LISTING, listingFolder } from "@/lib/cloudinary";
+import { initialiseListingFee, paystackConfigured } from "@/lib/paystack";
+import { env } from "@/lib/env";
 import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
 import {
   commissionClauseSchema,
@@ -496,4 +498,60 @@ export async function claimFeeWaiverAction(
     ok: false,
     message: messages[result.reason] ?? "We couldn't apply the free listing.",
   };
+}
+
+/**
+ * Step 6 — start a Paystack checkout for the listing fee.
+ *
+ * Only reachable once the first-50 waiver pool is exhausted. Returns the URL to
+ * send the landlord to; the actual money is confirmed later by the webhook, not
+ * by the browser coming back. A user returning from Paystack proves nothing —
+ * they could simply navigate to the success URL themselves.
+ */
+export async function startListingFeePaymentAction(
+  listingId: string
+): Promise<ListingFormState & { redirectUrl?: string }> {
+  const { user, profile } = await getCurrentProfile();
+  if (!user || !profile) return { ok: false, message: "Please sign in again." };
+
+  if (!paystackConfigured()) {
+    return {
+      ok: false,
+      message:
+        "Card payment isn't switched on yet. Please get in touch and we'll sort "
+        + "this out with you directly.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("id, owner_id, status, listing_fee_paid, fee_waived")
+    .eq("id", listingId)
+    .maybeSingle();
+
+  if (!listing || listing.owner_id !== user.id) {
+    return { ok: false, message: "We couldn't find that listing." };
+  }
+
+  if (listing.listing_fee_paid || listing.fee_waived) {
+    return { ok: false, message: "This listing's fee is already settled." };
+  }
+
+  if (!(EDITABLE_STATUSES as readonly string[]).includes(listing.status)) {
+    return { ok: false, message: "This listing can no longer be edited." };
+  }
+
+  const result = await initialiseListingFee({
+    email: user.email ?? "",
+    listingId,
+    userId: user.id,
+    callbackUrl: `${env.NEXT_PUBLIC_SITE_URL}/listings/${listingId}/edit/payment?from=paystack`,
+  });
+
+  if (!result.ok) {
+    return { ok: false, message: result.error };
+  }
+
+  return { ok: true, redirectUrl: result.authorizationUrl };
 }

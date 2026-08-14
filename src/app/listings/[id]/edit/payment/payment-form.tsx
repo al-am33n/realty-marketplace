@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { claimFeeWaiverAction, submitForReviewAction } from "@/app/actions/listings";
+import {
+  claimFeeWaiverAction,
+  startListingFeePaymentAction,
+  submitForReviewAction,
+} from "@/app/actions/listings";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { ListingFormState } from "@/lib/validation/listing";
@@ -21,16 +25,23 @@ export function PaymentForm({
   waiversLeft,
   canSubmit,
   missing,
+  feeLabel,
+  paymentAvailable,
+  returnedFromPaystack,
 }: {
   listingId: string;
   feeSettled: boolean;
   waiversLeft: number;
   canSubmit: boolean;
   missing: string[];
+  feeLabel: string;
+  paymentAvailable: boolean;
+  returnedFromPaystack: boolean;
 }) {
   const router = useRouter();
   const [claiming, startClaim] = useTransition();
   const [submitting, startSubmit] = useTransition();
+  const [paying, setPaying] = useState(false);
   const [state, setState] = useState<ListingFormState | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -41,6 +52,20 @@ export function PaymentForm({
       setState(result);
       if (result.ok) router.refresh();
     });
+  }
+
+  async function pay() {
+    setState(null);
+    setPaying(true);
+    const result = await startListingFeePaymentAction(listingId);
+    if (result.ok && result.redirectUrl) {
+      // Full page navigation to Paystack's hosted checkout — card details are
+      // entered on their domain, never ours, so we never handle them.
+      window.location.href = result.redirectUrl;
+      return;
+    }
+    setPaying(false);
+    setState(result);
   }
 
   function submit() {
@@ -55,6 +80,24 @@ export function PaymentForm({
   return (
     <div className="flex flex-col gap-5">
       {state?.message && !state.ok && <Alert tone="danger">{state.message}</Alert>}
+
+      {/* Coming back from Paystack proves nothing on its own — anyone can visit
+          this URL directly. The payment is only real once Paystack's webhook
+          tells our server so, which can lag the redirect by a moment. So the
+          message describes what we actually know. */}
+      {returnedFromPaystack && !feeSettled && (
+        <Alert tone="pending" title="Confirming your payment">
+          We&rsquo;re waiting for confirmation from Paystack. This usually takes
+          a few seconds — refresh the page shortly. If you were charged and this
+          doesn&rsquo;t clear, get in touch and we&rsquo;ll sort it out.
+        </Alert>
+      )}
+
+      {returnedFromPaystack && feeSettled && (
+        <Alert tone="success" title="Payment received">
+          Thanks — your listing fee is settled.
+        </Alert>
+      )}
 
       {!feeSettled && (
         <>
@@ -80,13 +123,38 @@ export function PaymentForm({
               </div>
             </div>
           ) : (
-            /* Paystack lands here. Being explicit beats a dead button — the
-               landlord can see exactly where they stand. */
-            <Alert tone="pending" title="Our 50 free listings have all been taken">
-              A listing fee applies to this one. Card payment isn&rsquo;t
-              switched on yet — please get in touch and we&rsquo;ll sort it out
-              with you directly.
-            </Alert>
+            <div className="rounded-lg border border-money-line bg-money-soft p-5">
+              <p className="text-lg font-semibold text-money">
+                Listing fee: <span className="tabular">{feeLabel}</span>
+              </p>
+              <p className="mt-2 text-base text-ink">
+                Our first 50 free listings have all been taken, so a one-off
+                listing fee applies to this one.
+              </p>
+              <p className="mt-2 text-sm text-ink-muted">
+                This is the only fee for listing. Commission is separate and only
+                ever applies after a deal actually closes.
+              </p>
+
+              {!paymentAvailable ? (
+                <div className="mt-4">
+                  <Alert tone="pending">
+                    Card payment isn&rsquo;t switched on yet — please get in
+                    touch and we&rsquo;ll sort this out with you directly.
+                  </Alert>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <Button onClick={pay} disabled={paying} variant="money" fullWidth>
+                    {paying ? "Opening payment…" : `Pay ${feeLabel}`}
+                  </Button>
+                  <p className="mt-2 text-xs text-ink-subtle">
+                    You&rsquo;ll be taken to Paystack to pay securely. We never
+                    see or store your card details.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
         </>
       )}

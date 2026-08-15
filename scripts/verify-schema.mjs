@@ -111,7 +111,8 @@ const { rows: enums } = await client.query(
     where n.nspname = 'public' group by t.typname order by t.typname`
 );
 console.log("  " + enums.map((e) => `${e.typname}(${e.n})`).join(", "));
-check("9 enum types", enums.length === 9, `found ${enums.length}`);
+// 9 from Phase 1, plus listing_mode (independent / platform_direct) in Phase 2.
+check("10 enum types", enums.length === 10, `found ${enums.length}`);
 
 // -- 6. triggers -------------------------------------------------------------
 console.log("\n6. Triggers");
@@ -128,6 +129,11 @@ for (const needed of [
   "on_auth_user_created",
   "profiles_guard_privileged_fields",
   "agents_guard_privileged_fields",
+  // Phase 2. The first stops an owner writing their own money fields or
+  // changing the listing mode after submission; the second un-signs the
+  // commission agreement when the mode changes.
+  "listings_guard_privileged_fields",
+  "listings_mode_change_effects",
 ]) {
   const present = triggers.some((t) => t.tgname === needed);
   check(needed, present, present ? undefined : "MISSING");
@@ -143,6 +149,27 @@ const { rows: constraints } = await client.query(
 for (const c of constraints) {
   const guarded = /coalesce/i.test(c.def);
   check(`${c.conname} uses coalesce`, guarded, guarded ? undefined : c.def);
+}
+
+// Same trap, different column. `listing_mode = 'platform_direct'` is NULL — not
+// false — when no mode has been chosen, and a CHECK only rejects FALSE, so
+// without the coalesce an unpaid listing could slip into the review queue.
+const { rows: feeConstraint } = await client.query(
+  `select conname, pg_get_constraintdef(oid) as def
+     from pg_constraint where conname = 'listings_review_requires_settled_fee'`
+);
+check(
+  "the fee constraint exists",
+  feeConstraint.length === 1,
+  feeConstraint.length ? undefined : "MISSING"
+);
+if (feeConstraint.length === 1) {
+  const guarded = /coalesce/i.test(feeConstraint[0].def);
+  check(
+    "listings_review_requires_settled_fee uses coalesce on listing_mode",
+    guarded,
+    guarded ? undefined : feeConstraint[0].def
+  );
 }
 
 // -- 8. no recursive cross-table policies ------------------------------------

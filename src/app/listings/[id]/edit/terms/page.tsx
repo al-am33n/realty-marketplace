@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { ListingStepper } from "@/components/listings/listing-stepper";
 import { Alert } from "@/components/ui/alert";
 import { loadEditableListing } from "@/lib/listings/load";
-import { COMMISSION_CLAUSE } from "@/lib/listings/commission-clause";
+import { commissionClauseFor } from "@/lib/listings/commission-clause";
+import { stepPath } from "@/lib/listings/steps";
 import { TermsForm } from "./terms-form";
 
 export const metadata: Metadata = {
@@ -15,6 +17,14 @@ export default async function ListingTermsStep({
   const { id } = await params;
   const listing = await loadEditableListing(id);
 
+  // There is no single set of terms to show until the owner has picked a mode —
+  // the two modes say opposite things about whether the platform is a party to
+  // the sale. Send them back to make that choice rather than guessing one.
+  if (!listing.listing_mode) {
+    redirect(stepPath(listing.id, "details"));
+  }
+
+  const clause = commissionClauseFor(listing.listing_mode);
   const alreadyAgreed = listing.commission_clause_agreed_at !== null;
 
   return (
@@ -22,9 +32,9 @@ export default async function ListingTermsStep({
       <ListingStepper listing={listing} current="terms" />
 
       <h1 className="text-2xl font-semibold text-brand-900">
-        {COMMISSION_CLAUSE.title}
+        {clause.title}
       </h1>
-      <p className="mt-2 text-base text-ink-muted">{COMMISSION_CLAUSE.summary}</p>
+      <p className="mt-2 text-base text-ink-muted">{clause.summary}</p>
 
       {alreadyAgreed && (
         <div className="mt-6">
@@ -41,7 +51,7 @@ export default async function ListingTermsStep({
       )}
 
       <div className="mt-6 flex flex-col gap-5 rounded-lg border border-line bg-surface-raised p-5">
-        {COMMISSION_CLAUSE.terms.map((term) => (
+        {clause.terms.map((term) => (
           <section key={term.heading}>
             <h2 className="font-semibold text-ink">{term.heading}</h2>
             <p className="mt-1 text-base text-ink-muted">{term.body}</p>
@@ -53,9 +63,11 @@ export default async function ListingTermsStep({
           mentioned — the point at which a user is most likely to worry. */}
       <div className="mt-6">
         <Alert tone="info" title="You are not paying anything now">
-          There is no deposit and no charge for listing beyond the listing fee
-          on the next step. Commission only ever applies after a deal actually
-          closes.
+          There is no deposit.{" "}
+          {listing.listing_mode === "platform_direct"
+            ? "There is no listing fee on this listing at all."
+            : "The only charge for listing is the fee on the next step."}{" "}
+          Commission only ever applies after a deal actually closes.
         </Alert>
       </div>
 
@@ -64,7 +76,7 @@ export default async function ListingTermsStep({
       </div>
 
       <p className="mt-4 text-xs text-ink-subtle">
-        Version {COMMISSION_CLAUSE.version}. We record which version you agreed
+        Version {clause.version}. We record which version you agreed
         to, so if these terms ever change, this listing stays covered by the
         wording you actually read.
       </p>

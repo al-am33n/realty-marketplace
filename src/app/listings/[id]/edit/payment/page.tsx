@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { ListingStepper } from "@/components/listings/listing-stepper";
 import { createClient } from "@/lib/supabase/server";
 import { loadEditableListing } from "@/lib/listings/load";
-import { readyToSubmit, stepCompletion } from "@/lib/listings/steps";
+import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
 import { LISTING_FEE_KOBO, paystackConfigured } from "@/lib/paystack";
 import { formatNaira } from "@/lib/utils";
 import { PaymentForm } from "./payment-form";
@@ -28,6 +29,14 @@ export default async function ListingPaymentStep({
   const { id } = await params;
   const query = await searchParams;
   const listing = await loadEditableListing(id);
+
+  // A Platform-Direct listing has no fee step at all — see listingSteps(). This
+  // URL is still reachable by hand or from an old bookmark, so send them to the
+  // step that actually follows the terms for their listing rather than showing
+  // a fee screen for a fee that does not exist.
+  if (listing.listing_mode === "platform_direct") {
+    redirect(stepPath(listing.id, "preview"));
+  }
 
   // Read-only pool state. A separate function from the claim on purpose —
   // simply viewing this page must not consume a waiver.

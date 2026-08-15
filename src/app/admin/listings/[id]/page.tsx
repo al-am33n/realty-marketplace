@@ -105,6 +105,17 @@ export default async function AdminListingDetail({
       <dl className="mt-6 grid grid-cols-2 gap-4 rounded-lg border border-line bg-surface-raised p-5 sm:grid-cols-3">
         {[
           ["Type", LISTING_TYPE_LABELS[listing.type]],
+          // Decides who runs the viewing, what the split is, and whether a fee
+          // was ever owed — so a reviewer needs it in front of them, not
+          // inferred from the fee row reading "Unpaid".
+          [
+            "Handled by",
+            listing.listing_mode === "platform_direct"
+              ? "Our own team (Platform-Direct)"
+              : listing.listing_mode === "independent"
+                ? "Independent agent"
+                : "Not chosen",
+          ],
           ["Property", PROPERTY_TYPE_LABELS[listing.property_type]],
           ["Bedrooms", listing.bedrooms?.toString() ?? "—"],
           ["Bathrooms", listing.bathrooms?.toString() ?? "—"],
@@ -115,7 +126,16 @@ export default async function AdminListingDetail({
               ? `${listing.lat.toFixed(5)}, ${listing.lng.toFixed(5)}`
               : "Not set",
           ],
-          ["Fee", listing.fee_waived ? "Waived" : listing.listing_fee_paid ? "Paid" : "Unpaid"],
+          [
+            "Fee",
+            listing.listing_mode === "platform_direct"
+              ? "None owed"
+              : listing.fee_waived
+                ? "Waived"
+                : listing.listing_fee_paid
+                  ? "Paid"
+                  : "Unpaid",
+          ],
           [
             "Commission clause",
             listing.commission_clause_agreed_at

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert } from "@/components/ui/alert";
 import { StatusPill } from "@/components/ui/status-pill";
+import { PlatformDirectBadge } from "@/components/listings/platform-direct-badge";
 import { loadOwnedListing } from "@/lib/listings/load";
 import { stepPath } from "@/lib/listings/steps";
 import { formatNaira } from "@/lib/utils";
@@ -91,6 +92,7 @@ export default async function ListingStatusPage({
           {listing.title || "Untitled listing"}
         </h1>
         <StatusPill status={listing.status} />
+        {listing.listing_mode === "platform_direct" && <PlatformDirectBadge size="sm" />}
       </div>
 
       <p className="tabular mt-1 text-base text-ink-muted">

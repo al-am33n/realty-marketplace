@@ -232,9 +232,24 @@ try {
 
   console.log("\n9. The 3-photo minimum actually holds");
   // Satisfy every OTHER submission constraint first (map pin, commission
-  // clause, settled fee) so the photo count is the only thing left that can
-  // fail — otherwise Postgres reports whichever constraint it hits first and we
-  // would not really be testing the photo rule.
+  // clause, listing mode, settled fee) so the photo count is the only thing
+  // left that can fail — otherwise Postgres reports whichever constraint it
+  // hits first and we would not really be testing the photo rule.
+  // The mode goes in a write of its own, BEFORE the commission clause.
+  //
+  // Changing listing_mode un-signs the commission agreement — the two modes are
+  // different agreements, so a signature cannot survive a switch between them
+  // (apply_listing_mode_change). Setting the mode and the signature in the SAME
+  // statement means the trigger clears the very timestamp that statement was
+  // setting. The app never does this: the mode is chosen on the details step
+  // and the clause is signed two steps later. The order here mirrors that.
+  await fetch(`${url}/rest/v1/listings?id=eq.${createdListingId}`, {
+    method: "PATCH",
+    headers: asUser(verifiedToken),
+    // Required before review as of Phase 2 (listings_mode_chosen_before_review).
+    body: JSON.stringify({ listing_mode: "independent" }),
+  });
+
   await fetch(`${url}/rest/v1/listings?id=eq.${createdListingId}`, {
     method: "PATCH",
     headers: asUser(verifiedToken),

@@ -107,14 +107,16 @@ export function PaymentForm({
                 Your listing fee is waived
               </p>
               <p className="mt-2 text-base text-ink">
-                We&rsquo;re waiving the fee for our first 50 listings.{" "}
+                We&rsquo;re waiving the first month for our first 50 listings.{" "}
                 <span className="tabular font-medium">{waiversLeft}</span>{" "}
                 {waiversLeft === 1 ? "is" : "are"} still available, and this
                 listing can use one.
               </p>
               <p className="mt-2 text-sm text-ink-muted">
-                Nothing to pay now, and nothing to pay later on this listing.
-                Commission only ever applies after a deal closes.
+                Nothing to pay now. After the first month this listing is{" "}
+                <span className="tabular">{feeLabel}</span> a month to keep up,
+                and you can take it down at any time. Commission is separate and
+                only ever applies after a deal actually closes.
               </p>
               <div className="mt-4">
                 <Button onClick={claim} disabled={claiming} variant="money" fullWidth>
@@ -125,15 +127,16 @@ export function PaymentForm({
           ) : (
             <div className="rounded-lg border border-money-line bg-money-soft p-5">
               <p className="text-lg font-semibold text-money">
-                Listing fee: <span className="tabular">{feeLabel}</span>
+                Listing fee: <span className="tabular">{feeLabel}</span> a month
               </p>
               <p className="mt-2 text-base text-ink">
-                Our first 50 free listings have all been taken, so a one-off
-                listing fee applies to this one.
+                Our first 50 free months have all been taken, so the listing fee
+                applies to this one from the start.
               </p>
               <p className="mt-2 text-sm text-ink-muted">
-                This is the only fee for listing. Commission is separate and only
-                ever applies after a deal actually closes.
+                This pays for the first month, and you can take the listing down
+                at any time. Commission is separate and only ever applies after a
+                deal actually closes.
               </p>
 
               {!paymentAvailable ? (

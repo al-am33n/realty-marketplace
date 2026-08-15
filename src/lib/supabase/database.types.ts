@@ -33,6 +33,17 @@ export type PropertyType =
   | "room_and_parlour"
   | "land"
   | "commercial";
+/**
+ * How a listing gets closed, and therefore what it costs.
+ *
+ *   independent      outside agent, 70/30 split, monthly listing fee
+ *   platform_direct  in-house team closes it, 100% commission, no listing fee
+ *
+ * Chosen by the owner at listing creation and frozen once submitted for review.
+ * NULL until they choose: the two options are presented with neither
+ * pre-selected, so "no answer yet" has to be representable.
+ */
+export type ListingMode = "independent" | "platform_direct";
 export type ListingStatus =
   | "draft"
   | "pending_review"
@@ -143,6 +154,7 @@ export type Database = {
           description: string;
           images: string[];
           status: ListingStatus;
+          listing_mode: ListingMode | null;
           rejection_reason: string | null;
           listing_fee_paid: boolean;
           fee_waived: boolean;
@@ -171,6 +183,7 @@ export type Database = {
           description?: string;
           images?: string[];
           status?: ListingStatus;
+          listing_mode?: ListingMode | null;
           rejection_reason?: string | null;
           listing_fee_paid?: boolean;
           fee_waived?: boolean;
@@ -323,6 +336,7 @@ export type Database = {
           reason:
             | "granted"
             | "already_waived"
+            | "platform_direct_no_fee"
             | "pool_exhausted"
             | "owner_has_open_waiver"
             | "not_owner"
@@ -358,6 +372,7 @@ export type Database = {
     Enums: {
       user_role: UserRole;
       listing_type: ListingType;
+      listing_mode: ListingMode;
       property_type: PropertyType;
       listing_status: ListingStatus;
       booking_status: BookingStatus;

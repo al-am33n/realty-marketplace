@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StatusPill } from "@/components/ui/status-pill";
+import { PlatformDirectBadge } from "@/components/listings/platform-direct-badge";
 import { stepPath } from "@/lib/listings/steps";
 import { formatNaira } from "@/lib/utils";
 import type { Listing } from "@/lib/supabase/database.types";
@@ -51,6 +52,9 @@ export function ListingRow({ listing }: { listing: Listing }) {
               {listing.title || "Untitled draft"}
             </span>
             <StatusPill status={listing.status} />
+            {listing.listing_mode === "platform_direct" && (
+              <PlatformDirectBadge size="sm" />
+            )}
           </div>
 
           <span className="tabular text-sm text-ink-muted">

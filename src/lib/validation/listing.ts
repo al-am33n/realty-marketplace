@@ -42,6 +42,19 @@ export const LISTING_TYPE_LABELS: Record<(typeof LISTING_TYPES)[number], string>
   sale: "For sale",
 };
 
+/**
+ * How the listing gets closed, and therefore what it costs (CLAUDE.md revenue
+ * model). Presented to the owner with NEITHER option pre-selected — see the
+ * chooser in the details form, and the migration that made the column nullable
+ * so "not chosen yet" is a state the database can actually hold.
+ */
+export const LISTING_MODES = ["independent", "platform_direct"] as const;
+
+export const LISTING_MODE_LABELS: Record<(typeof LISTING_MODES)[number], string> = {
+  independent: "Independent agent",
+  platform_direct: "Platform-Direct",
+};
+
 /** Property types where bedroom and bathroom counts are meaningless. */
 export const TYPES_WITHOUT_ROOMS: ReadonlySet<string> = new Set(["land", "commercial"]);
 
@@ -125,6 +138,9 @@ const optionalCount = (max: number, label: string) =>
 
 /** Step 1 — Details. */
 export const listingDetailsSchema = z.object({
+  listing_mode: z.enum(LISTING_MODES, {
+    message: "Choose how you'd like this listing handled",
+  }),
   title: z
     .string()
     .trim()
@@ -140,7 +156,21 @@ export const listingDetailsSchema = z.object({
     .trim()
     .max(4000, "Keep the description under 4000 characters")
     .default(""),
-});
+})
+  /**
+   * Platform-Direct is sales only to start (CLAUDE.md: "Scope to start: sales
+   * only, not rentals" — a bigger commission per deal, and a workload a 2-3
+   * person in-house team can actually carry).
+   *
+   * The form does not offer the choice on a rental at all, so reaching this
+   * means the request did not come from the form. The database enforces the
+   * same rule in listings_platform_direct_is_sale_only; this exists so the
+   * refusal is a sentence rather than a constraint violation.
+   */
+  .refine((data) => !(data.listing_mode === "platform_direct" && data.type === "rent"), {
+    message: "Platform-Direct is only available for properties for sale at the moment",
+    path: ["listing_mode"],
+  });
 
 /** Step 3 — Location. */
 export const listingLocationSchema = z.object({

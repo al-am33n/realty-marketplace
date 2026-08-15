@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert } from "@/components/ui/alert";
 import { StatusPill } from "@/components/ui/status-pill";
+import { PlatformDirectBadge } from "@/components/listings/platform-direct-badge";
 import { WaitingTime } from "@/components/ui/waiting-time";
 import { createClient } from "@/lib/supabase/server";
 import { formatNaira } from "@/lib/utils";
@@ -112,6 +113,9 @@ export default async function AdminListingsPage({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate font-medium text-ink">{listing.title}</span>
                       <StatusPill status={listing.status} />
+                      {listing.listing_mode === "platform_direct" && (
+                        <PlatformDirectBadge size="sm" />
+                      )}
                     </div>
                     <span className="tabular text-sm text-ink-muted">
                       {formatNaira(listing.price_kobo)}

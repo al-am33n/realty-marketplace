@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
+import { ListingModeChooser } from "@/components/listings/listing-mode-chooser";
 import {
   LISTING_TYPES,
   LISTING_TYPE_LABELS,
@@ -15,7 +16,7 @@ import {
   TYPES_WITHOUT_ROOMS,
   type ListingFormState,
 } from "@/lib/validation/listing";
-import type { Listing } from "@/lib/supabase/database.types";
+import type { Listing, ListingMode } from "@/lib/supabase/database.types";
 
 const INITIAL: ListingFormState = { ok: false };
 
@@ -42,6 +43,18 @@ export function DetailsForm({ listing }: { listing: Listing }) {
     values.property_type || listing.property_type
   );
   const showRoomCounts = !TYPES_WITHOUT_ROOMS.has(propertyType);
+
+  // Rent vs sale is tracked in state rather than left uncontrolled, because the
+  // mode chooser below only applies to sales — Platform-Direct is sales-only to
+  // start — so switching to "For rent" has to take that choice off the screen.
+  const [listingType, setListingType] = useState<string>(values.type || listing.type);
+
+  // Starts as whatever the listing already holds, which is null on a new draft.
+  // Nothing is pre-selected — see the note in ListingModeChooser for why that
+  // matters and what else depends on it.
+  const [mode, setMode] = useState<ListingMode | null>(
+    (values.listing_mode as ListingMode | undefined) ?? listing.listing_mode
+  );
 
   // The stored price is kobo; the input shows whole naira, which is what people
   // think and type in.
@@ -70,7 +83,8 @@ export function DetailsForm({ listing }: { listing: Listing }) {
                 type="radio"
                 name="type"
                 value={type}
-                defaultChecked={(values.type || listing.type) === type}
+                checked={listingType === type}
+                onChange={() => setListingType(type)}
                 className="sr-only-text"
               />
               {LISTING_TYPE_LABELS[type]}
@@ -83,6 +97,31 @@ export function DetailsForm({ listing }: { listing: Listing }) {
           </p>
         )}
       </fieldset>
+
+      {/* Platform-Direct is sales only to start (CLAUDE.md), so a rental has no
+          choice to make. Rather than showing a chooser with one option greyed
+          out, say plainly what applies and why. */}
+      {listingType === "sale" ? (
+        <ListingModeChooser
+          value={mode}
+          onChange={setMode}
+          errors={state.fieldErrors?.listing_mode}
+        />
+      ) : (
+        <>
+          <div className="rounded-lg border border-line bg-surface-sunken p-4">
+            <p className="text-sm font-medium text-ink">
+              Rentals are handled by an independent agent
+            </p>
+            <p className="mt-1 text-sm text-ink-muted">
+              A vetted agent from our network shows the property and handles the
+              let. The listing fee is ₦5,000 per month. Our in-house team
+              currently takes on sales only.
+            </p>
+          </div>
+          <input type="hidden" name="listing_mode" value="independent" />
+        </>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="property_type" className="text-sm font-medium text-ink">
@@ -128,7 +167,7 @@ export function DetailsForm({ listing }: { listing: Listing }) {
         errors={state.fieldErrors?.price_kobo}
         placeholder="2,500,000"
         hint={
-          (values.type || listing.type) === "rent"
+          listingType === "rent"
             ? "The annual rent, as you'd quote it to a tenant."
             : "The asking price."
         }

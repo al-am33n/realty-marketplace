@@ -55,14 +55,18 @@ async function signIn(email, password) {
 }
 
 /** A listing complete enough to leave draft, apart from the fee. */
-async function createCompleteListing(ownerId, { status = "draft", feeWaived = false } = {}) {
+async function createCompleteListing(
+  ownerId,
+  { status = "draft", feeWaived = false, listingMode = "independent", type = "rent" } = {}
+) {
   const res = await fetch(`${url}/rest/v1/listings`, {
     method: "POST",
     headers: { ...svcH, Prefer: "return=representation" },
     body: JSON.stringify({
       owner_id: ownerId,
       title: `Test listing ${stamp} ${createdListingIds.length}`,
-      type: "rent",
+      type,
+      listing_mode: listingMode,
       property_type: "apartment",
       price_kobo: 250000000,
       location_text: "Wuse 2, Abuja",
@@ -461,7 +465,174 @@ try {
     headers: svcH,
   });
 
-  console.log("\n8. Cleanup");
+  // -------------------------------------------------------------------------
+  // Platform-Direct mode.
+  //
+  // The mode decides whether money is owed at all, so every rule around it is
+  // checked here against the live database rather than trusted from the SQL.
+  // Phase 1 and Phase 2 both produced bugs that looked correct in the migration
+  // and were only visible when a real request hit them.
+  // -------------------------------------------------------------------------
+  console.log("\n8. Platform-Direct listings");
+
+  const pdEmail = `p2.pd.${stamp}@example.com`;
+  const pdOwnerId = await createUser(pdEmail, PASSWORD, {
+    full_name: "PD Landlord",
+    role: "landlord",
+  });
+  const pdToken = await signIn(pdEmail, PASSWORD);
+
+  // A Platform-Direct listing pays no fee, so it must be able to reach review
+  // with listing_fee_paid and fee_waived both false — the case the original
+  // fee constraint would have blocked outright.
+  const pdListingId = await createCompleteListing(pdOwnerId, {
+    listingMode: "platform_direct",
+    type: "sale",
+  });
+  const pdSubmit = await fetch(`${url}/rest/v1/listings?id=eq.${pdListingId}`, {
+    method: "PATCH",
+    headers: { ...asUser(pdToken), Prefer: "return=representation" },
+    body: JSON.stringify({ status: "pending_review" }),
+  });
+  check(
+    "a Platform-Direct listing reaches review with no fee paid and none waived",
+    pdSubmit.ok,
+    `HTTP ${pdSubmit.status}`
+  );
+
+  // Sales only to start. A rental must be refused by the database, not merely
+  // hidden by the form.
+  const pdRental = await fetch(`${url}/rest/v1/listings`, {
+    method: "POST",
+    headers: { ...svcH, Prefer: "return=representation" },
+    body: JSON.stringify({
+      owner_id: pdOwnerId,
+      title: `Test listing ${stamp} pd-rental`,
+      type: "rent",
+      listing_mode: "platform_direct",
+      property_type: "apartment",
+      price_kobo: 250000000,
+      location_text: "Wuse 2, Abuja",
+      status: "draft",
+    }),
+  });
+  check(
+    "a rental cannot be Platform-Direct",
+    pdRental.status >= 400,
+    `HTTP ${pdRental.status}`
+  );
+  if (pdRental.ok) {
+    const created = await pdRental.json();
+    createdListingIds.push(created[0].id);
+  }
+
+  // A listing may not enter review with no mode chosen — the commercial terms
+  // would be blank in front of the reviewer.
+  const noModeId = await createCompleteListing(pdOwnerId, { listingMode: null });
+  const noModeSubmit = await fetch(`${url}/rest/v1/listings?id=eq.${noModeId}`, {
+    method: "PATCH",
+    headers: asUser(pdToken),
+    body: JSON.stringify({ status: "pending_review" }),
+  });
+  check(
+    "a listing with no mode chosen cannot be submitted for review",
+    noModeSubmit.status >= 400,
+    `HTTP ${noModeSubmit.status}`
+  );
+
+  // The waiver pool is finite and meant for landlords who owe a fee. A
+  // Platform-Direct listing owes nothing, so claiming one would silently take a
+  // free month away from someone who needed it.
+  const pdDraftId = await createCompleteListing(pdOwnerId, {
+    listingMode: "platform_direct",
+    type: "sale",
+  });
+  const pdWaiver = await fetch(`${url}/rest/v1/rpc/claim_listing_fee_waiver`, {
+    method: "POST",
+    headers: asUser(pdToken),
+    body: JSON.stringify({ p_listing_id: pdDraftId }),
+  });
+  const pdWaiverBody = await pdWaiver.json();
+  const pdWaiverRow = Array.isArray(pdWaiverBody) ? pdWaiverBody[0] : pdWaiverBody;
+  check(
+    "a Platform-Direct listing cannot claim a fee waiver",
+    pdWaiverRow?.granted === false && pdWaiverRow?.reason === "platform_direct_no_fee",
+    `granted=${pdWaiverRow?.granted} reason=${pdWaiverRow?.reason}`
+  );
+
+  // The mode is a commercial term. Frozen once the listing has left the owner's
+  // hands — otherwise: publish free as Platform-Direct, then switch.
+  const pdFreeze = await fetch(`${url}/rest/v1/listings?id=eq.${pdListingId}`, {
+    method: "PATCH",
+    headers: asUser(pdToken),
+    body: JSON.stringify({ listing_mode: "independent" }),
+  });
+  check(
+    "the mode cannot be changed once the listing is under review",
+    pdFreeze.status >= 400,
+    `HTTP ${pdFreeze.status}`
+  );
+
+  // Switching mode on a draft un-signs the commission agreement, because the
+  // two modes say opposite things about whether the platform is a party to the
+  // sale — and it returns any claimed waiver to the pool.
+  const switchId = await createCompleteListing(pdOwnerId, { type: "sale" });
+
+  // The waiver is set directly rather than claimed through the RPC, because
+  // section 6 deliberately leaves the pool at its cap — a claim here would be
+  // refused, and the test would then "pass" against a listing that never held a
+  // waiver at all. Granting it outright is what this check actually needs.
+  // The database connection is a superuser with no auth.uid(), which the
+  // privileged-field guard treats as trusted server-side code.
+  await db.query("update public.listings set fee_waived = true where id = $1", [switchId]);
+  const { rows: beforeSwitch } = await db.query(
+    "select fee_waived from public.listings where id = $1",
+    [switchId]
+  );
+  check(
+    "the draft holds a waiver before the mode changes",
+    beforeSwitch[0].fee_waived === true,
+    `fee_waived=${beforeSwitch[0].fee_waived}`
+  );
+
+  await fetch(`${url}/rest/v1/listings?id=eq.${switchId}`, {
+    method: "PATCH",
+    headers: asUser(pdToken),
+    body: JSON.stringify({ listing_mode: "platform_direct" }),
+  });
+  const { rows: afterSwitch } = await db.query(
+    "select listing_mode, fee_waived, commission_clause_agreed_at, commission_clause_version"
+      + " from public.listings where id = $1",
+    [switchId]
+  );
+  check(
+    "switching to Platform-Direct releases the claimed waiver",
+    afterSwitch[0].fee_waived === false,
+    `fee_waived=${afterSwitch[0].fee_waived}`
+  );
+  check(
+    "switching mode un-signs the commission agreement",
+    afterSwitch[0].commission_clause_agreed_at === null
+      && afterSwitch[0].commission_clause_version === null,
+    `agreed_at=${afterSwitch[0].commission_clause_agreed_at}`
+  );
+
+  // Money that genuinely changed hands is never released by a trigger. The
+  // owner is stopped and told to get in touch instead.
+  const paidId = await createCompleteListing(pdOwnerId, { type: "sale" });
+  await db.query("update public.listings set listing_fee_paid = true where id = $1", [paidId]);
+  const paidSwitch = await fetch(`${url}/rest/v1/listings?id=eq.${paidId}`, {
+    method: "PATCH",
+    headers: asUser(pdToken),
+    body: JSON.stringify({ listing_mode: "platform_direct" }),
+  });
+  check(
+    "the mode cannot be changed once the fee has actually been paid",
+    paidSwitch.status >= 400,
+    `HTTP ${paidSwitch.status}`
+  );
+
+  console.log("\n9. Cleanup");
   await cleanup();
   createdListingIds.length = 0;
   createdUserIds.length = 0;

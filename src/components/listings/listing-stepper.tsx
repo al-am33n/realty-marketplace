@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
-  LISTING_STEPS,
+  listingSteps,
   stepCompletion,
   stepIndex,
   stepPath,
@@ -17,8 +17,9 @@ import type { Listing } from "@/lib/supabase/database.types";
  * current one are not links, because jumping to Payment from Details would
  * only produce a confusing dead end.
  *
- * On mobile this is a compact "Step 2 of 6" line plus a bar — a six-item
- * horizontal stepper does not fit a phone screen without becoming unreadable,
+ * On mobile this is a compact "Step 2 of 6" line plus a bar — a five- or
+ * six-item horizontal stepper does not fit a phone screen without becoming
+ * unreadable,
  * and the UI spec is explicit that this is a mobile-first product. The full
  * stepper appears from the small breakpoint upwards.
  */
@@ -29,16 +30,19 @@ export function ListingStepper({
   listing: Listing;
   current: ListingStepSlug;
 }) {
+  // A Platform-Direct listing has no fee step, so it is genuinely "step 4 of 5"
+  // rather than 4 of 6 with one greyed out — see listingSteps().
+  const steps = listingSteps(listing.listing_mode);
   const done = stepCompletion(listing);
-  const currentIndex = stepIndex(current);
-  const currentStep = LISTING_STEPS[currentIndex]!;
+  const currentIndex = stepIndex(current, listing.listing_mode);
+  const currentStep = steps[currentIndex]!;
 
   return (
     <nav aria-label="Listing progress" className="mb-8">
       {/* Mobile */}
       <div className="sm:hidden">
         <p className="text-sm font-medium text-ink">
-          Step {currentIndex + 1} of {LISTING_STEPS.length}
+          Step {currentIndex + 1} of {steps.length}
           <span className="text-ink-muted"> · {currentStep.label}</span>
         </p>
         <div
@@ -46,19 +50,19 @@ export function ListingStepper({
           role="progressbar"
           aria-valuenow={currentIndex + 1}
           aria-valuemin={1}
-          aria-valuemax={LISTING_STEPS.length}
-          aria-label={`Step ${currentIndex + 1} of ${LISTING_STEPS.length}: ${currentStep.label}`}
+          aria-valuemax={steps.length}
+          aria-label={`Step ${currentIndex + 1} of ${steps.length}: ${currentStep.label}`}
         >
           <div
             className="h-full rounded-full bg-brand-700 transition-all"
-            style={{ width: `${((currentIndex + 1) / LISTING_STEPS.length) * 100}%` }}
+            style={{ width: `${((currentIndex + 1) / steps.length) * 100}%` }}
           />
         </div>
       </div>
 
       {/* Desktop */}
       <ol className="hidden sm:flex sm:items-center sm:gap-1">
-        {LISTING_STEPS.map((step, index) => {
+        {steps.map((step, index) => {
           const isCurrent = step.slug === current;
           const isComplete = done[step.slug];
           // Only allow navigating back to steps already visited or completed.
@@ -106,7 +110,7 @@ export function ListingStepper({
                 </span>
               )}
 
-              {index < LISTING_STEPS.length - 1 && (
+              {index < steps.length - 1 && (
                 <span aria-hidden="true" className="mx-1 h-px w-4 bg-line-strong" />
               )}
             </li>

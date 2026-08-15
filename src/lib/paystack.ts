@@ -19,16 +19,19 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 const PAYSTACK_API = "https://api.paystack.co";
 
 /**
- * The flat listing fee charged once the first-50 waiver pool is exhausted.
+ * The listing fee, in kobo like every other money value in this codebase.
  *
- * ⚠️  PLACEHOLDER — CLAUDE.md specifies "a flat fee thereafter" but never says
- * how much. ₦5,000 is a plausible starting figure for the Nigerian market, low
- * enough not to deter a landlord with one property. It is a business decision,
- * not a technical one, and should be confirmed before any real charge is made.
+ * Settled in CLAUDE.md: ₦5,000 per month, on independent-agent listings only.
+ * Platform-Direct listings pay nothing — the platform is paid out of the whole
+ * commission on close instead — and never reach this code path at all.
  *
- * In kobo, like every other money value in this codebase.
+ * ⚠️  ONE MONTH IS ALL THIS CHARGES TODAY. The fee is recurring by policy, but
+ * only the first month's charge is built: this initialises a single Paystack
+ * transaction with no plan or subscription behind it, and nothing yet bills
+ * month two. Recurring billing is the next piece of work — until it lands, a
+ * listing that has paid once stays up indefinitely without further charge.
  */
-export const LISTING_FEE_KOBO = 500_000; // ₦5,000
+export const LISTING_FEE_KOBO = 500_000; // ₦5,000 per month
 
 export function paystackConfigured(): boolean {
   return Boolean(process.env.PAYSTACK_SECRET_KEY);

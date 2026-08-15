@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ListingStepper } from "@/components/listings/listing-stepper";
 import { Alert } from "@/components/ui/alert";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { PlatformDirectBadge } from "@/components/listings/platform-direct-badge";
 import { loadEditableListing } from "@/lib/listings/load";
 import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
 import {
@@ -102,7 +103,12 @@ export default async function ListingPreviewStep({
                 <span className="text-base font-normal text-ink-muted"> / year</span>
               )}
             </p>
-            <VerifiedBadge label="Reviewed listing" size="sm" />
+            <span className="flex flex-wrap items-center gap-2">
+              {listing.listing_mode === "platform_direct" && (
+                <PlatformDirectBadge size="sm" />
+              )}
+              <VerifiedBadge label="Reviewed listing" size="sm" />
+            </span>
           </div>
 
           <h2 className="text-lg font-semibold text-ink">

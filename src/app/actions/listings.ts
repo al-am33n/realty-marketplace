@@ -7,7 +7,7 @@ import { EDITABLE_STATUSES } from "@/lib/listings/load";
 import { CLOUDINARY_CLOUD_NAME, MAX_PHOTOS_PER_LISTING, listingFolder } from "@/lib/cloudinary";
 import { initialiseListingFee, paystackConfigured } from "@/lib/paystack";
 import { env } from "@/lib/env";
-import { readyToSubmit, stepCompletion, stepPath } from "@/lib/listings/steps";
+import { readyToSubmit, stepAfterTerms, stepCompletion, stepPath } from "@/lib/listings/steps";
 import {
   commissionClauseSchema,
   listingDetailsSchema,
@@ -15,7 +15,7 @@ import {
   toFieldErrors,
   type ListingFormState,
 } from "@/lib/validation/listing";
-import { COMMISSION_CLAUSE_VERSION } from "@/lib/listings/commission-clause";
+import { clauseVersionFor } from "@/lib/listings/commission-clause";
 
 /**
  * Server Actions for the listing form.
@@ -115,6 +115,7 @@ export async function saveDetailsAction(
   formData: FormData
 ): Promise<ListingFormState | never> {
   const raw = {
+    listing_mode: String(formData.get("listing_mode") ?? ""),
     title: String(formData.get("title") ?? ""),
     type: String(formData.get("type") ?? ""),
     property_type: String(formData.get("property_type") ?? ""),
@@ -126,6 +127,7 @@ export async function saveDetailsAction(
 
   // Echo back what was typed so a rejected submit does not clear the form.
   const values = {
+    listing_mode: raw.listing_mode,
     title: raw.title,
     type: raw.type,
     property_type: raw.property_type,
@@ -148,6 +150,7 @@ export async function saveDetailsAction(
   const { data, error } = await supabase
     .from("listings")
     .update({
+      listing_mode: parsed.data.listing_mode,
       title: parsed.data.title,
       type: parsed.data.type,
       property_type: parsed.data.property_type,
@@ -163,6 +166,22 @@ export async function saveDetailsAction(
 
   if (error) {
     console.error("[saveDetails]", error.message);
+
+    // Changing how a listing is handled after its fee has genuinely been paid
+    // is refused by the apply_listing_mode_change trigger, because releasing a
+    // real payment automatically would be destroying a record of money that
+    // actually changed hands. The trigger raises a sentence written for the
+    // landlord; pass it through rather than replacing it with a generic error.
+    if (error.message.includes("fee has already been paid")) {
+      return {
+        ok: false,
+        message:
+          "This listing's fee has already been paid, so how it is handled can no "
+          + "longer be changed here. Please get in touch and we will sort it out.",
+        values,
+      };
+    }
+
     return { ok: false, message: "We couldn't save those details. Please try again.", values };
   }
 
@@ -252,6 +271,30 @@ export async function agreeCommissionAction(
 
   const supabase = await createClient();
 
+  // Which clause was agreed to depends on the listing's mode — the two modes
+  // are different agreements, not one agreement at two prices. Read the mode
+  // from the row rather than accepting it from the form: otherwise a crafted
+  // POST could record a listing as having signed the other mode's terms.
+  const { data: current, error: readError } = await supabase
+    .from("listings")
+    .select("listing_mode")
+    .eq("id", listingId)
+    .maybeSingle();
+
+  if (readError || !current) {
+    console.error("[agreeCommission] read", readError?.message);
+    return { ok: false, message: "We couldn't record your agreement. Please try again." };
+  }
+
+  if (!current.listing_mode) {
+    return {
+      ok: false,
+      message:
+        "Please choose how you'd like this listing handled on the first step "
+        + "before agreeing to the commission terms.",
+    };
+  }
+
   // Record WHEN they agreed and to WHICH wording. If the clause text is later
   // revised, this listing stays bound to the version its owner actually read —
   // see src/lib/listings/commission-clause.ts.
@@ -259,7 +302,7 @@ export async function agreeCommissionAction(
     .from("listings")
     .update({
       commission_clause_agreed_at: new Date().toISOString(),
-      commission_clause_version: COMMISSION_CLAUSE_VERSION,
+      commission_clause_version: clauseVersionFor(current.listing_mode),
     })
     .eq("id", listingId)
     .in("status", [...EDITABLE_STATUSES])
@@ -278,7 +321,8 @@ export async function agreeCommissionAction(
   }
 
   revalidatePath(stepPath(listingId, "terms"));
-  redirect(stepPath(listingId, "payment"));
+  // A Platform-Direct listing has no fee step to go to — see stepAfterTerms.
+  redirect(stepPath(listingId, stepAfterTerms(current.listing_mode)));
 }
 
 /**

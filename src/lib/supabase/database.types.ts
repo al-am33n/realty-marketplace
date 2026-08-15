@@ -158,6 +158,9 @@ export type Database = {
           rejection_reason: string | null;
           listing_fee_paid: boolean;
           fee_waived: boolean;
+          /** End of the month this listing is paid up to. NULL until it goes live. */
+          fee_paid_through: string | null;
+          renewal_cancelled_at: string | null;
           commission_clause_agreed_at: string | null;
           commission_clause_version: string | null;
           booking_locked_at: string | null;
@@ -187,6 +190,8 @@ export type Database = {
           rejection_reason?: string | null;
           listing_fee_paid?: boolean;
           fee_waived?: boolean;
+          fee_paid_through?: string | null;
+          renewal_cancelled_at?: string | null;
           commission_clause_agreed_at?: string | null;
           commission_clause_version?: string | null;
           booking_locked_at?: string | null;
@@ -271,6 +276,41 @@ export type Database = {
         Relationships: [];
       };
 
+      /**
+       * Saved Paystack card authorizations, for unattended monthly renewal.
+       * No anon/authenticated grants exist — server-side reads only.
+       */
+      billing_authorizations: {
+        Row: {
+          id: string;
+          user_id: string;
+          authorization_code: string;
+          last4: string | null;
+          card_type: string | null;
+          exp_month: string | null;
+          exp_year: string | null;
+          bank: string | null;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          authorization_code: string;
+          last4?: string | null;
+          card_type?: string | null;
+          exp_month?: string | null;
+          exp_year?: string | null;
+          bank?: string | null;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["billing_authorizations"]["Insert"]>;
+        Relationships: [];
+      };
+
       payments: {
         Row: {
           id: string;
@@ -283,6 +323,8 @@ export type Database = {
           paystack_ref: string;
           status: PaymentStatus;
           paid_at: string | null;
+          /** For a recurring listing fee, the end of the month it bought. */
+          period_end: string | null;
           raw_payload: Json | null;
           created_at: string;
           updated_at: string;
@@ -298,6 +340,7 @@ export type Database = {
           paystack_ref: string;
           status?: PaymentStatus;
           paid_at?: string | null;
+          period_end?: string | null;
           raw_payload?: Json | null;
           created_at?: string;
           updated_at?: string;
@@ -367,6 +410,58 @@ export type Database = {
           p_payload: Json;
         };
         Returns: Array<{ newly_processed: boolean; payment_id: string }>;
+      };
+
+      /** The billing run's work list: live independent listings past due. */
+      listings_due_for_fee: {
+        Args: { p_limit?: number };
+        Returns: Array<{
+          listing_id: string;
+          owner_id: string;
+          title: string;
+          fee_paid_through: string;
+          next_period_end: string;
+          overdue_since: string;
+        }>;
+      };
+
+      /**
+       * Reserves one listing's billing period before any money moves. A unique
+       * index makes a second reservation for the same period impossible.
+       */
+      begin_listing_fee_charge: {
+        Args: { p_listing_id: string; p_amount_kobo: number };
+        Returns: Array<{
+          claimed: boolean;
+          reference: string | null;
+          period_end: string | null;
+          reason:
+            | "claimed"
+            | "not_found"
+            | "no_fee_for_mode"
+            | "not_live"
+            | "renewal_cancelled"
+            | "not_due"
+            | "already_in_flight";
+        }>;
+      };
+
+      /** Closes out a reservation. Idempotent — only a pending row settles. */
+      settle_listing_fee_charge: {
+        Args: { p_reference: string; p_succeeded: boolean; p_payload?: Json };
+        Returns: Array<{
+          settled: boolean;
+          reason: "succeeded" | "failed" | "unknown_reference" | "already_settled";
+        }>;
+      };
+
+      /** The owner's own renewal switch. Cancelling does not take a listing down. */
+      set_listing_renewal: {
+        Args: { p_listing_id: string; p_renew: boolean };
+        Returns: Array<{
+          ok: boolean;
+          reason: "resumed" | "cancelled" | "not_found" | "not_owner";
+        }>;
       };
     };
     Enums: {

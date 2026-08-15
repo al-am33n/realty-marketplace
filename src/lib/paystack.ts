@@ -117,6 +117,81 @@ export async function initialiseListingFee({
 }
 
 /**
+ * Charges a card we already have permission to charge.
+ *
+ * This is how a monthly renewal happens with nobody present. The
+ * `authorization_code` came back from the landlord's first successful card
+ * payment; it is opaque, only works alongside our secret key, and only charges
+ * that same customer. We never see or store the card itself.
+ *
+ * `reference` MUST be the one handed out by begin_listing_fee_charge. That
+ * function has already reserved the billing period in the database, so a
+ * duplicate run cannot reach this call for the same month.
+ *
+ * A "success" here is immediate — unlike a checkout, there is no redirect and
+ * no waiting. The webhook will also arrive for the same reference, which is
+ * why settling is idempotent on both sides.
+ */
+export async function chargeAuthorization({
+  authorizationCode,
+  email,
+  reference,
+  amountKobo,
+  listingId,
+  userId,
+}: {
+  authorizationCode: string;
+  email: string;
+  reference: string;
+  amountKobo: number;
+  listingId: string;
+  userId: string;
+}): Promise<{ ok: boolean; status?: string; message?: string; raw?: unknown }> {
+  try {
+    const response = await fetch(`${PAYSTACK_API}/transaction/charge_authorization`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secretKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        authorization_code: authorizationCode,
+        email,
+        amount: amountKobo,
+        currency: "NGN",
+        reference,
+        metadata: {
+          listing_id: listingId,
+          user_id: userId,
+          purpose: "listing_fee",
+          renewal: true,
+        },
+      }),
+      cache: "no-store",
+    });
+
+    const body = await response.json();
+
+    if (!response.ok || !body?.status) {
+      return { ok: false, message: body?.message ?? `HTTP ${response.status}`, raw: body };
+    }
+
+    // Paystack returns 200 with data.status = "failed" for a declined card.
+    // A declined card is not an error in our code — it is an ordinary outcome
+    // that has to be reported to the landlord — so it is not thrown.
+    return {
+      ok: body.data?.status === "success",
+      status: body.data?.status,
+      message: body.data?.gateway_response,
+      raw: body,
+    };
+  } catch (error) {
+    console.error("[paystack charge]", error instanceof Error ? error.message : error);
+    return { ok: false, message: "Could not reach the payment provider" };
+  }
+}
+
+/**
  * Verifies that a webhook really came from Paystack.
  *
  * Paystack signs the RAW request body with HMAC-SHA512 using the secret key.

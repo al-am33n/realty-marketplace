@@ -20,6 +20,8 @@ A two-sided real estate marketplace for Nigeria (PadMapper-style: map + list bro
 - Backup storage: Cloudflare R2 free tier (10GB storage, 1M writes/10M reads per month, zero egress) — destination for the Phase 6 DIY database backup script
 - Staging: a second Supabase project (free tier allows 2 projects) — separate from production, set up in Phase 6/7 rather than earlier since Phase 1–5 development ran directly against the live project
 - Uptime monitoring: a free tier checker (e.g. UptimeRobot, Better Uptime) — confirms the site itself is reachable, distinct from Sentry which only catches application errors, not full outages
+- Admin alerts: Telegram Bot API (genuinely free forever — no BSP fee, no per-message cost, unlike WhatsApp) — pings the founder's own phone for events like "new listing submitted for review" or "payment received." Not a user-facing notification channel (Telegram has low everyday usage in Nigeria vs WhatsApp) — internal/admin use only.
+- Fraud-prevention APIs (free tier): AbuseIPDB (flags signups/listing submissions from known-abusive IP addresses) and HaveIBeenPwned (warns a user at signup if their email has appeared in a known data breach, encouraging a stronger password) — both align directly with the platform's trust-first differentiator.
 
 ## Launch scope (v1)
 Sale + standard rental only. Abuja only. Short-let is Phase 2.
@@ -54,7 +56,7 @@ Sale + standard rental only. Abuja only. Short-let is Phase 2.
 3. `feature/search-map` — Leaflet map + list view, filters, Postgres full-text + geo search
 4. `feature/bookings-agents` — booking request flow, agent assignment, agent/renter/landlord dashboards
 5. `feature/deals-commissions` — deal pipeline, invoice-based commission collection, commission clause
-6. `feature/admin-trust` — admin panel, listing moderation, incident runbook (written here), backup script (written and restore-tested here, targeting Cloudflare R2 for storage — hard prerequisite before phase 7), set up the staging Supabase project (second free-tier project) so phase 7 testing doesn't run against production
+6. `feature/admin-trust` — admin panel, listing moderation, incident runbook (written here), backup script (written and restore-tested here, targeting Cloudflare R2 for storage — hard prerequisite before phase 7), set up the staging Supabase project (second free-tier project) so phase 7 testing doesn't run against production, wire up Telegram bot admin alerts (new listing/payment events), integrate AbuseIPDB and HaveIBeenPwned checks into the trust/moderation tooling
 7. `feature/launch-prep` — Sentry integration, uptime monitoring (separate free tool — Sentry catches errors, not full outages), PWA offline-caching polish, seed 5–10 real listings first, then open to the full 50-listing waived-fee cohort, soft launch in Abuja
 
 Merge each feature branch to `main` only after its own end-to-end test pass. Don't start a new feature branch until the current one is merged — keeps debugging isolated to one feature at a time, which was the whole point of this branching approach.
@@ -75,10 +77,8 @@ Merge each feature branch to `main` only after its own end-to-end test pass. Don
 - Commission-funded referral incentives (landlord-refers-landlord, agent-refers-landlord).
 - Diaspora-focused positioning in marketing copy where relevant ("verified for Nigerians abroad").
 
-## Settled during the build
-- **Commission clause enforceability window: 6 months** (decided in Phase 2, was open between 6 and 12). Runs from the date of introduction — normally the viewing — and each introduced person has their own separate window. The reason to state a window at all is that an unbounded claim is the *weakest* version of the term, not the strongest: an indefinite hold over someone's property reads as unreasonable and is what a court is most willing to read down. Lives in `src/lib/listings/commission-clause.ts` as `COMMISSION_WINDOW_MONTHS`; changing it means a new clause version, since `listings.commission_clause_version` binds each listing to the wording its owner actually read. **Still needs review by a Nigerian lawyer before real money depends on it.**
-
 ## Still open (ask the user, don't assume)
+- Exact enforceability window for the commission clause after a viewing (6 vs 12 months).
 - Whether to revisit a deposit model later if commission-dodging proves to be a frequent real problem.
 - Exact trigger for the Supabase Pro upgrade (listing-count/revenue threshold vs. calendar date).
 

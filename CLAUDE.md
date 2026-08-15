@@ -24,10 +24,12 @@ A two-sided real estate marketplace for Nigeria (PadMapper-style: map + list bro
 - Fraud-prevention APIs (free tier): AbuseIPDB (flags signups/listing submissions from known-abusive IP addresses) and HaveIBeenPwned (warns a user at signup if their email has appeared in a known data breach, encouraging a stronger password) — both align directly with the platform's trust-first differentiator.
 
 ## Launch scope (v1)
-Sale + standard rental only. Abuja only. Short-let is Phase 2.
+Sale + standard rental only. Short-let is Phase 2. **Geographic scope: Abuja, Lagos, and Kaduna** (expanded from the original Abuja-only plan — a deliberate departure from the earlier "soft launch narrow, one city" reasoning, made consciously, not by accident). Given the regulatory findings above, Abuja and Kaduna carry less immediate legal weight than Lagos — worth considering launching Abuja/Kaduna first and sequencing Lagos in once the LASRERA consultation is done, rather than treating all three as simultaneous from day one, though this sequencing is not yet a confirmed decision.
 
 ## Revenue model
-- **Listing fee**: waived for the first 50 listings (cold-start subsidy), then a flat fee thereafter.
+- **Listing fee**: ₦5,000/month, recurring — applies only to **independent-agent listings**. **Platform-Direct listings (see below) pay no listing fee at all**, since the platform earns its full commission on close instead. First 50 listings get their first month free (cold-start subsidy), then billed ₦5,000/month from month 2 onward.
+- **Platform-Direct closing (new, active decision):** at listing creation, a landlord chooses between (a) independent agent — existing 70/30 agent-favorable commission split, ₦5,000/month listing fee — or (b) Platform-Direct — the platform's own in-house team conducts the viewing and closes the deal directly, keeping 100% of the commission, no listing fee charged. The choice must be presented **neutrally in the UI** — not pre-selected or worded to nudge toward whichever option is more profitable for the platform. Every Platform-Direct listing is visibly, unambiguously labeled as such to all users. Scope to start: **sales only, not rentals** — larger commission per deal, more sustainable per-person workload for a small team. Contingent on real in-house team capacity (assumed available: 2–3 people). **Before this ships:** one targeted legal consultation on (a) current Abuja requirements for this model, (b) exposure if the draft federal escrow-account policy (see Regulatory notes below) becomes law. Recommended: at least one team member pursues NIESV student/graduate membership — both a hedge against incoming federal licensing and a genuine trust signal.
+- **Agent payment model (recommended, not yet confirmed by Amin — do not treat as settled):** pure commission only, no flat per-viewing fee. Starting split 70% agent / 30% platform for independent-agent listings, weighted toward the agent for the first cohort specifically (same cold-start logic as the listing-fee waiver). Reliability enforced via the existing leaderboard/lead-assignment mechanic (better performance → more assigned leads), not cash bonuses — deliberately avoids owing money the platform hasn't already collected.
 - **Sale commission**: 5–10% of sale price, invoice model — platform never holds sale proceeds, only invoices its commission slice via Paystack after close.
 - **Rental commission**: positioned as a share of the customary ~10% agency fee Nigerian tenants already pay, split between platform and the agent who did the viewing. Invoice model, same as sale.
 - **No booking deposit.** Commission is protected by (1) a signed procuring-cause commission clause at listing creation — commission owed if a deal closes with a platform-introduced party, regardless of whether paperwork ran through the platform, (2) the agent's own financial stake in the deal, (3) access consequences — dodging costs future listing/agent access.
@@ -39,11 +41,19 @@ Sale + standard rental only. Abuja only. Short-let is Phase 2.
 - Every agent has a public profile: verified, completion rate, rating.
 - **Verification approach (as built in Phase 1, and confirmed as the approach for now): email verification for every role, including agents** — no Nigerian SMS provider has a genuine free tier, which collided with the free-build constraint. Requiring phone verification specifically for agents was considered and explicitly declined for now, to keep Phase 2 focused on listings rather than adding auth complexity. Phone number is still collected and stored; `profiles.verified` is channel-agnostic, so swapping in real SMS OTP later (for agents specifically or everyone) only changes which code sets that flag, not any policy or screen. Every listing still gets manual human review regardless, which remains the primary fraud control independent of verification channel.
 - Booking-lock mechanic: once a viewing is scheduled, the listing flags to other interested parties; auto-delists on close. Prevents the double-rental scam pattern documented in the Nigerian market.
-- Platform is legally a facilitator/marketplace, not a party to any lease or sale — same posture as Airbnb/Zillow.
+- Platform is legally a facilitator/marketplace, not a party to any lease or sale — same posture as Airbnb/Zillow. **Exception: Platform-Direct listings (see Revenue model) — the platform itself is a party to those deals, a deliberate, scoped, visibly-labeled departure from the facilitator posture, not a blanket change.**
+
+## Regulatory notes (researched, not legal advice — get a real consultation before Platform-Direct ships)
+- **LASRERA (Lagos State Real Estate Regulatory Authority)** mandates agent/agency registration with real penalties (₦250,000 individuals, ₦1,000,000 companies for operating unregistered) — but this is **Lagos-State-specific law**. Does not apply to an Abuja launch.
+- **ESVARBON/NIESV** regulate formally trained **Estate Surveyors and Valuers** specifically (a distinct, examined profession) — their own stated mandate excludes pure sales/rental facilitation agents who aren't doing formal valuation work.
+- **No FCT/Abuja equivalent to LASRERA found.** Abuja-specific regulation located in research (AGIS, Department of Lands) governs land *title* registration, not agency *licensing*. The regulatory landscape for pure agency work in Abuja is currently lighter than Lagos.
+- **No Kaduna State equivalent to LASRERA found either.** General investment-promotion and environmental bodies exist, but nothing resembling Lagos's mandatory agent-licensing regime turned up. Nigeria Property Centre already lists active agents operating in Kaduna, consistent with a lighter regulatory environment. Treat as "nothing found," not "confirmed clear" — worth a real consultation before Platform-Direct goes live there, same caveat as Abuja.
+- **Practical read across the 3-city launch:** Lagos is the one state with confirmed, actively-enforced, mandatory licensing (LASRERA) — Abuja and Kaduna both currently appear lighter. If sequencing the three rather than launching simultaneously, Lagos is the one that specifically warrants the legal consultation before going live there, given the real registered penalties (₦250,000 individuals, ₦1,000,000 companies) and active 2025–2026 enforcement.
+- **Live risk to monitor, not yet law:** the federal Ministry of Housing and Urban Development announced a draft policy (~July 2026) proposing mandatory licensing for developers *and* agents nationwide, including a possible **escrow account requirement**. This would directly collide with the platform's invoice-only, non-custodial commission model if it passes. Check on this periodically — draft policies in Nigeria often take years to become enforced law, but this is a real, current signal, not hypothetical.
 
 ## Data model (core tables)
 - `profiles` — user_id, role (renter_buyer/landlord/agent/admin), full_name, phone, verified, created_at
-- `listings` — id, owner_id, title, type (rent/sale), property_type, price, location_text, lat, lng, bedrooms, bathrooms, description, images[], status (draft/pending_review/live/closed), listing_fee_paid, created_at
+- `listings` — id, owner_id, title, type (rent/sale), property_type, price, location_text, lat, lng, bedrooms, bathrooms, description, images[], status (draft/pending_review/live/closed), listing_fee_paid, **listing_mode (independent/platform_direct — new field, needed for the Platform-Direct decision; drives which commission split and fee logic applies)**, created_at
 - `bookings` — id, listing_id, requester_id, agent_id, scheduled_at, status (requested/confirmed/completed/cancelled), notes
 - `agents` — id, profile_id, coverage_area, active, rating
 - `deals` — id, listing_id, buyer_renter_id, agent_id, deal_type (sale/rental), agreed_price, commission_pct, commission_amount, status (**negotiating/agreed/payment/closed_won/closed_lost** — per app-flow.docx §4; supersedes the simpler open/closed_won/closed_lost sketch, "negotiating" through "payment" map onto what was originally called "open"), closed_at
@@ -52,12 +62,12 @@ Sale + standard rental only. Abuja only. Short-let is Phase 2.
 
 ## Build phases (this is also the branch plan — one feature branch per phase)
 1. `feature/foundation` — auth, roles, schema, RLS policies, PWA manifest + basic service worker
-2. `feature/listings-core` — create listing, pay listing fee (Paystack), manual review workflow, publish
+2. `feature/listings-core` — create listing, **independent vs Platform-Direct mode toggle (presented neutrally, see Revenue model)**, pay listing fee (Paystack, independent-mode only), manual review workflow, publish
 3. `feature/search-map` — Leaflet map + list view, filters, Postgres full-text + geo search
 4. `feature/bookings-agents` — booking request flow, agent assignment, agent/renter/landlord dashboards
 5. `feature/deals-commissions` — deal pipeline, invoice-based commission collection, commission clause
 6. `feature/admin-trust` — admin panel, listing moderation, incident runbook (written here), backup script (written and restore-tested here, targeting Cloudflare R2 for storage — hard prerequisite before phase 7), set up the staging Supabase project (second free-tier project) so phase 7 testing doesn't run against production, wire up Telegram bot admin alerts (new listing/payment events), integrate AbuseIPDB and HaveIBeenPwned checks into the trust/moderation tooling
-7. `feature/launch-prep` — Sentry integration, uptime monitoring (separate free tool — Sentry catches errors, not full outages), PWA offline-caching polish, seed 5–10 real listings first, then open to the full 50-listing waived-fee cohort, soft launch in Abuja
+7. `feature/launch-prep` — Sentry integration, uptime monitoring (separate free tool — Sentry catches errors, not full outages), PWA offline-caching polish, seed 5–10 real listings first, then open to the full 50-listing first-month-free cohort, soft launch across Abuja, Lagos, and Kaduna (consider sequencing Abuja/Kaduna first, Lagos once the LASRERA consultation is done — see Regulatory notes)
 
 Merge each feature branch to `main` only after its own end-to-end test pass. Don't start a new feature branch until the current one is merged — keeps debugging isolated to one feature at a time, which was the whole point of this branching approach.
 
@@ -81,6 +91,7 @@ Merge each feature branch to `main` only after its own end-to-end test pass. Don
 - Exact enforceability window for the commission clause after a viewing (6 vs 12 months).
 - Whether to revisit a deposit model later if commission-dodging proves to be a frequent real problem.
 - Exact trigger for the Supabase Pro upgrade (listing-count/revenue threshold vs. calendar date).
+- Confirm the agent payment model (recommended: pure commission, 70/30 agent-favorable split, no per-viewing fee) — Amin said "hold onto that," not yet confirmed as settled.
 
 ## Companion documents
 A `docs/` folder sits alongside this file with the full business and design documentation. Two are directly relevant to implementation and worth reading when working on the corresponding phase:
@@ -90,6 +101,7 @@ The rest (`business-build-plan.docx`, `business-plan-no-costs.docx`, `investor-p
 
 ## Working style
 - The founder (Amin) is new to hands-on development — explain every step, not just what to do but why, in plain language. Don't assume familiarity with terminal commands, git operations, framework conventions, or jargon (e.g. don't just say "run the migration," say what a migration is, what command runs it, and what should happen when it works).
+- Amin has confirmed he can dedicate real, sustained focus/time to this project — a prior concern about limited solo/part-time bandwidth being the biggest risk to the build was raised and explicitly corrected. Don't assume time-constrained pacing without reason to.
 - Before running anything non-trivial, briefly state what the command/action does and what success looks like, so mistakes are caught immediately rather than discovered later.
 - When something breaks, explain what likely went wrong in plain terms before fixing it, not just the fix — the goal is that Amin is learning the stack as we build, not just watching it get built.
 - Go step by step rather than batching many changes at once, especially early on — smaller, explained steps beat large unexplained ones for someone building their first real project.

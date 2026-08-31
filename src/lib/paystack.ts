@@ -25,11 +25,13 @@ const PAYSTACK_API = "https://api.paystack.co";
  * Platform-Direct listings pay nothing — the platform is paid out of the whole
  * commission on close instead — and never reach this code path at all.
  *
- * ⚠️  ONE MONTH IS ALL THIS CHARGES TODAY. The fee is recurring by policy, but
- * only the first month's charge is built: this initialises a single Paystack
- * transaction with no plan or subscription behind it, and nothing yet bills
- * month two. Recurring billing is the next piece of work — until it lands, a
- * listing that has paid once stays up indefinitely without further charge.
+ * The fee genuinely recurs. It is not a Paystack Plan or Subscription: those
+ * bill on Paystack's own schedule, which would put the decision of whether a
+ * listing still owes anything on their side rather than ours. Instead each
+ * month is a separate charge against a saved card, driven by the daily billing
+ * run in src/lib/billing.ts, so the database stays the single authority on what
+ * has been paid for and what has not — and cancelling is a row we own rather
+ * than an API call that might not land.
  */
 export const LISTING_FEE_KOBO = 500_000; // ₦5,000 per month
 
@@ -64,16 +66,27 @@ export async function initialiseListingFee({
   listingId,
   userId,
   callbackUrl,
+  reference: suppliedReference,
 }: {
   email: string;
   listingId: string;
   userId: string;
   callbackUrl: string;
+  /**
+   * For a renewal paid by hand, the reference already reserved by
+   * begin_listing_fee_charge. Passing it is what ties the checkout to the
+   * billing period the database has set aside: the webhook recognises the
+   * `lfee_` prefix and settles that reservation instead of writing a second
+   * payment row for a month already accounted for.
+   *
+   * Omitted for a first payment, where no period exists to reserve yet.
+   */
+  reference?: string;
 }): Promise<InitialiseResult> {
   // Our own reference, not Paystack's. Prefixing with the listing id makes a
   // payment traceable to a listing from the Paystack dashboard alone, which
   // matters when reconciling a dispute months later.
-  const reference = `listing_${listingId}_${Date.now()}`;
+  const reference = suppliedReference ?? `listing_${listingId}_${Date.now()}`;
 
   try {
     const response = await fetch(`${PAYSTACK_API}/transaction/initialize`, {
@@ -92,6 +105,7 @@ export async function initialiseListingFee({
           listing_id: listingId,
           user_id: userId,
           purpose: "listing_fee",
+          renewal: Boolean(suppliedReference),
         },
       }),
       // Never cache a payment initialisation.

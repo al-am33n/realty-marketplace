@@ -6,6 +6,8 @@ import {
   chargeAuthorization,
   paystackConfigured,
 } from "@/lib/paystack";
+import { notifyFeeChargeFailed, notifyFeeCharged } from "@/lib/email/notify";
+import { formatNaira } from "@/lib/utils";
 
 /**
  * The monthly listing-fee billing run.
@@ -41,6 +43,22 @@ import {
  * double-billed month costs a landlord's trust.
  * ---------------------------------------------------------------------------
  */
+
+/**
+ * A billing period end, written the way a person reads a date.
+ *
+ * en-NG rather than the machine ISO string: "30 September 2026" is what the
+ * landlord needs to know their listing is paid up to, and an ISO timestamp in
+ * an email reads like a system error report.
+ */
+function formatPeriodEnd(value: string | null): string {
+  if (!value) return "the end of this billing period";
+  return new Date(value).toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
 
 export type BillingRunResult = {
   considered: number;
@@ -169,9 +187,20 @@ export async function runListingFeeBilling(
       continue;
     }
 
+    // Tell the landlord either way. A silent failed charge is how a listing
+    // quietly disappears from search a week later with nobody knowing why —
+    // the grace period only helps someone who has been told it is running.
     if (charge.ok) {
+      await notifyFeeCharged(listing.listing_id, {
+        feeLabel: formatNaira(LISTING_FEE_KOBO),
+        paidThrough: formatPeriodEnd(claim.period_end),
+      });
       record("charged");
     } else {
+      await notifyFeeChargeFailed(listing.listing_id, {
+        graceDays: FEE_GRACE_DAYS,
+        feeLabel: formatNaira(LISTING_FEE_KOBO),
+      });
       record("failed", charge.message ?? charge.status ?? "the card was declined");
     }
   }
@@ -229,4 +258,75 @@ export function listingBillingState(listing: {
     renewalCancelled: listing.renewal_cancelled_at !== null,
     daysOfGraceLeft: overdue ? Math.max(0, Math.ceil((graceEnds - now) / 86_400_000)) : 0,
   };
+}
+
+/**
+ * The card on file for a user, for display only.
+ *
+ * Read with the service role because billing_authorizations has no grants for
+ * `anon` or `authenticated` at all — deliberately. An authorization code is
+ * useless without our secret key, but there is no reason for it ever to leave
+ * the server, so the table is simply not exposed and the page renders "Visa
+ * ending 4242" from a server component.
+ *
+ * The code itself is never returned from this function, only the four digits
+ * and the brand a person needs to recognise which card it is.
+ */
+export type SavedCard = {
+  last4: string | null;
+  cardType: string | null;
+  expMonth: string | null;
+  expYear: string | null;
+  bank: string | null;
+};
+
+export async function loadSavedCard(userId: string): Promise<SavedCard | null> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("billing_authorizations")
+    .select("last4, card_type, exp_month, exp_year, bank")
+    .eq("user_id", userId)
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("[billing] could not read the saved card", error.message);
+    return null;
+  }
+
+  const row = data?.[0];
+  if (!row) return null;
+
+  return {
+    last4: row.last4,
+    cardType: row.card_type,
+    expMonth: row.exp_month,
+    expYear: row.exp_year,
+    bank: row.bank,
+  };
+}
+
+/**
+ * Whether a saved card's printed expiry date has passed.
+ *
+ * Worth surfacing before the charge fails rather than after. A card expiring at
+ * the end of next month is the single most predictable cause of a declined
+ * renewal, and "update your card" a fortnight early is a much better message
+ * than "we couldn't take your fee" a fortnight late.
+ *
+ * A card is valid through the LAST day of its printed month, so the comparison
+ * is against the first day of the month after it.
+ */
+export function cardHasExpired(card: SavedCard | null, now: Date = new Date()): boolean {
+  if (!card?.expMonth || !card.expYear) return false;
+
+  const month = Number.parseInt(card.expMonth, 10);
+  const year = Number.parseInt(card.expYear, 10);
+  if (!Number.isInteger(month) || !Number.isInteger(year)) return false;
+
+  // Date's month argument is 0-based, so passing `month` (1-based) already
+  // means "the first day of the following month".
+  return new Date(year, month, 1).getTime() <= now.getTime();
 }

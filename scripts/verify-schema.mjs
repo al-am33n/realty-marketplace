@@ -3,7 +3,7 @@
 //
 //   npm run verify:schema
 import pg from "pg";
-import { loadEnv, makeChecker } from "./lib/env.mjs";
+import { loadEnv, makeChecker, connectDb } from "./lib/env.mjs";
 
 const { Client } = pg;
 const { dbUrl } = loadEnv();
@@ -17,12 +17,15 @@ if (!dbUrl) {
 }
 
 const CORE = ["profiles", "agents", "listings", "bookings", "deals", "payments"];
-const ALL = [...CORE, "auth_throttle"];
+// billing_authorizations joins the list in Phase 2. Like auth_throttle it is
+// deliberately deny-all with no policies and no anon/authenticated grants — a
+// saved card token has no business being reachable from a browser.
+const ALL = [...CORE, "auth_throttle", "billing_authorizations"];
 
 const { check, finish } = makeChecker();
 
 const client = new Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
-await client.connect();
+await connectDb(client, dbUrl);
 
 // -- 1. tables exist ---------------------------------------------------------
 console.log("\n1. Tables exist");
@@ -58,10 +61,11 @@ const { rows: policyRows } = await client.query(
 const policyCount = Object.fromEntries(policyRows.map((p) => [p.tablename, p.n]));
 for (const t of ALL) {
   const n = policyCount[t] ?? 0;
-  if (t === "auth_throttle") {
+  if (t === "auth_throttle" || t === "billing_authorizations") {
     // Deliberately zero: RLS on with no policies means deny-all, so the table
-    // is reachable only through the SECURITY DEFINER rate-limit function.
-    check("auth_throttle has 0 policies (deny-all, intended)", n === 0, `got ${n}`);
+    // is reachable only through a SECURITY DEFINER function or the service
+    // role. A policy appearing here would mean somebody had opened it up.
+    check(`${t} has 0 policies (deny-all, intended)`, n === 0, `got ${n}`);
   } else {
     check(`${t}: ${n} policies`, n > 0, n > 0 ? undefined : "NO POLICIES = deny-all");
   }
@@ -134,6 +138,11 @@ for (const needed of [
   // commission agreement when the mode changes.
   "listings_guard_privileged_fields",
   "listings_mode_change_effects",
+  // Recurring billing. Both must exist: the first starts the clock when an
+  // admin approves a listing, the second when a listing is inserted already
+  // live — a seed script, say — which would otherwise never be billed at all.
+  "listings_start_billing_period",
+  "listings_start_billing_period_on_insert",
 ]) {
   const present = triggers.some((t) => t.tgname === needed);
   check(needed, present, present ? undefined : "MISSING");
@@ -192,6 +201,40 @@ for (const p of allPolicies) {
     `${p.tablename} / ${p.policyname}`,
     offending.length === 0,
     offending.length ? `inline subquery on ${offending.join(", ")}` : undefined
+  );
+}
+
+// -- 9. the double-charge guarantee ------------------------------------------
+// A recurring charge runs unattended against a saved card. The rule that at
+// most one open listing-fee charge may exist per listing per billing period is
+// what makes billing the same month twice impossible rather than unlikely, and
+// it is a UNIQUE INDEX rather than application logic precisely because two
+// runs can both pass an "have we charged yet?" check before either writes.
+//
+// Checked here because dropping it would break nothing visibly. Every test
+// would still pass. The damage would only show up on somebody's bank statement.
+console.log("\n9. Recurring billing cannot charge a period twice");
+const { rows: feeIndex } = await client.query(
+  `select indexdef from pg_indexes
+    where schemaname = 'public' and indexname = 'payments_one_open_charge_per_period'`
+);
+check(
+  "payments_one_open_charge_per_period exists",
+  feeIndex.length === 1,
+  feeIndex.length ? undefined : "MISSING — a month could be charged twice"
+);
+if (feeIndex.length === 1) {
+  const def = feeIndex[0].indexdef;
+  check("  ...is UNIQUE", /create unique index/i.test(def), def);
+  check(
+    "  ...covers listing_id and period_end",
+    /\(listing_id,\s*period_end\)/i.test(def),
+    def
+  );
+  check(
+    "  ...only constrains open charges (pending, success)",
+    /where/i.test(def) && /pending/i.test(def) && /success/i.test(def),
+    def
   );
 }
 

@@ -2,13 +2,15 @@
 // Uses the ANON key, i.e. the key that ships to every visitor's device.
 //
 //   npm run verify:rls
-import { loadEnv, makeChecker, keyHeaders } from "./lib/env.mjs";
+import { loadEnv, makeChecker, keyHeaders, requireApiReachable } from "./lib/env.mjs";
 
 const { url, anon, service } = loadEnv();
 const { check, finish } = makeChecker();
 
 const anonH = keyHeaders(anon);
 const svcH = keyHeaders(service);
+
+await requireApiReachable(url);
 
 console.log("\nA. Anonymous visitor (anon key — public, ships to the browser)");
 

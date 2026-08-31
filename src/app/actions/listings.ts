@@ -16,6 +16,7 @@ import {
   type ListingFormState,
 } from "@/lib/validation/listing";
 import { clauseVersionFor } from "@/lib/listings/commission-clause";
+import { notifyListingSubmitted } from "@/lib/email/notify";
 
 /**
  * Server Actions for the listing form.
@@ -407,6 +408,9 @@ export async function submitForReviewAction(
   if (!data) {
     return { ok: false, message: "This listing can no longer be submitted." };
   }
+
+  // Awaited before the redirect — see the note in the admin approve action.
+  await notifyListingSubmitted(listingId);
 
   revalidatePath("/dashboard");
   redirect(`/listings/${listingId}/status?submitted=1`);

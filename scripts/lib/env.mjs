@@ -86,3 +86,84 @@ export function userHeaders(anonKey, accessToken) {
     "Content-Type": "application/json",
   };
 }
+
+/**
+ * Opens a direct Postgres connection, turning the two failures that actually
+ * happen into a sentence rather than a stack trace.
+ *
+ * A free-tier Supabase project is PAUSED after about a week with no traffic,
+ * and pausing tears down its hostname entirely — so the first sign of it is
+ * `ENOTFOUND`, or a `tenant/user ... not found` error from the pooler. Neither
+ * of those reads as "your project is asleep, go and press Restore", which is
+ * what it means and the only thing to do about it.
+ */
+export async function connectDb(client, dbUrl) {
+  try {
+    await client.connect();
+  } catch (error) {
+    const text = String(error?.message ?? error);
+    const host = (() => {
+      try {
+        return new URL(dbUrl ?? "").hostname;
+      } catch {
+        return "your database host";
+      }
+    })();
+
+    if (
+      error?.code === "ENOTFOUND"
+      || text.includes("ENOTFOUND")
+      || text.includes("tenant/user")
+      || text.includes("not found")
+    ) {
+      console.error(
+        "\nCannot reach the database at " + host + ".\n\n"
+          + "The most likely reason is that the Supabase project is PAUSED. Free-tier\n"
+          + "projects pause after about a week without traffic, and a paused project's\n"
+          + "hostname stops resolving altogether — which is why this looks like the\n"
+          + "server does not exist rather than like it is asleep.\n\n"
+          + "To fix it: open dashboard.supabase.com, choose this project, and click\n"
+          + "Restore. It takes a couple of minutes. Then run this command again.\n\n"
+          + "If the project was deleted rather than paused, create a new one, put its\n"
+          + "values in .env.local, and run `npm run db:push` before verifying.\n"
+      );
+      process.exit(1);
+    }
+
+    if (text.includes("password authentication failed")) {
+      console.error(
+        "\nThe database rejected the password in SUPABASE_DB_URL.\n"
+          + "Dashboard -> Project Settings -> Database -> Connection string -> URI,\n"
+          + "then replace [YOUR-PASSWORD] with your database password.\n"
+      );
+      process.exit(1);
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Confirms the REST API is up before a script starts making assertions.
+ *
+ * Without this, a paused project produces dozens of confusing FAIL lines —
+ * every check "fails" because nothing answered, which reads like dozens of
+ * separate bugs instead of one sleeping server.
+ */
+export async function requireApiReachable(url) {
+  try {
+    const res = await fetch(url + "/auth/v1/health", {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.status >= 500) throw new Error("HTTP " + res.status);
+  } catch {
+    console.error(
+      "\nCannot reach the Supabase API at " + url + ".\n\n"
+        + "The most likely reason is that the project is PAUSED — free-tier projects\n"
+        + "pause after about a week without traffic. Open dashboard.supabase.com,\n"
+        + "choose this project, click Restore, wait a couple of minutes, and run this\n"
+        + "again.\n"
+    );
+    process.exit(1);
+  }
+}

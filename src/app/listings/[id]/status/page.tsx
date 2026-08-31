@@ -3,7 +3,10 @@ import Link from "next/link";
 import { Alert } from "@/components/ui/alert";
 import { StatusPill } from "@/components/ui/status-pill";
 import { PlatformDirectBadge } from "@/components/listings/platform-direct-badge";
+import { BillingPanel } from "@/components/listings/billing-panel";
 import { loadOwnedListing } from "@/lib/listings/load";
+import { loadSavedCard } from "@/lib/billing";
+import { paystackConfigured } from "@/lib/paystack";
 import { stepPath } from "@/lib/listings/steps";
 import { formatNaira } from "@/lib/utils";
 import type { Listing, ListingStatus } from "@/lib/supabase/database.types";
@@ -76,6 +79,18 @@ export default async function ListingStatusPage({
   const listing = await loadOwnedListing(id, `/listings/${id}/status`);
   const copy = statusCopy(listing);
 
+  // Only looked up when it could actually be shown. The card lives behind the
+  // service role, so this is a privileged read — worth not doing on every
+  // draft's status page for the sake of a panel that would not render.
+  const showsBilling =
+    listing.status === "live" && listing.listing_mode === "independent";
+  const savedCard = showsBilling ? await loadSavedCard(listing.owner_id) : null;
+
+  // Coming back from Paystack after settling an overdue fee. As on the payment
+  // step, the redirect itself proves nothing — anyone can visit this URL — so
+  // the message says only what we actually know.
+  const returnedFromPaystack = query.from === "paystack";
+
   // Shown once, straight after submitting. Distinct from the ongoing status
   // message below: this confirms the action succeeded, that one describes the
   // state. app-flow.docx §6 asks every irreversible action to be confirmed.
@@ -109,6 +124,17 @@ export default async function ListingStatusPage({
         </div>
       )}
 
+      {returnedFromPaystack && (
+        <div className="mt-6">
+          <Alert tone="pending" title="Confirming your payment">
+            We&rsquo;re waiting for confirmation from Paystack. This usually
+            takes a few seconds — refresh the page shortly. If you were charged
+            and this doesn&rsquo;t clear, get in touch and we&rsquo;ll sort it
+            out.
+          </Alert>
+        </div>
+      )}
+
       <div className="mt-6">
         <Alert tone={copy.tone} title={copy.heading}>
           {copy.body}
@@ -124,6 +150,14 @@ export default async function ListingStatusPage({
             {listing.rejection_reason}
           </p>
         </div>
+      )}
+
+      {showsBilling && (
+        <BillingPanel
+          listing={listing}
+          savedCard={savedCard}
+          paymentAvailable={paystackConfigured()}
+        />
       )}
 
       <div className="mt-8 flex flex-col gap-3">

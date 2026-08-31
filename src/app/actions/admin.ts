@@ -8,6 +8,7 @@ import {
   toFieldErrors,
   type ListingFormState,
 } from "@/lib/validation/listing";
+import { notifyListingApproved, notifyListingRejected } from "@/lib/email/notify";
 
 /**
  * Admin moderation actions (app-flow.docx §5).
@@ -78,6 +79,16 @@ export async function approveListingAction(
     };
   }
 
+  // Awaited before the redirect, not fired and forgotten. A serverless
+  // function can be frozen the moment its response is sent, so an un-awaited
+  // request is not "sent in the background" — it is quite likely never sent at
+  // all. Waiting costs the admin a fraction of a second.
+  //
+  // The result is deliberately not checked: the listing is already live, and a
+  // mail failure must not turn a completed approval into an error the admin
+  // would then retry. sendEmail logs its own failures.
+  await notifyListingApproved(listingId);
+
   revalidatePath("/admin/listings");
   redirect("/admin/listings?approved=1");
 }
@@ -131,9 +142,10 @@ export async function rejectListingAction(
     };
   }
 
-  // TODO (Phase 2, blocked on Resend): email the landlord the reason. Until
-  // then the reason is visible on their listing status page, so the feedback
-  // still reaches them — just not proactively.
+  // The reason is the whole message. It also stays on the listing's status
+  // page, so a landlord whose email is lost is not left guessing.
+  await notifyListingRejected(listingId, parsed.data.reason);
+
   revalidatePath("/admin/listings");
   redirect("/admin/listings?rejected=1");
 }

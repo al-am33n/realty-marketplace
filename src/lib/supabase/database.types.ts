@@ -446,12 +446,25 @@ export type Database = {
         }>;
       };
 
-      /** Closes out a reservation. Idempotent — only a pending row settles. */
+      /**
+       * Closes out a reservation.
+       *
+       * Idempotent, and accepts money that arrives after the reservation was
+       * reaped — a landlord who finishes a checkout an hour later is still
+       * credited. `period_already_paid` is the one outcome that needs a person:
+       * the money arrived, the month was already bought by another payment, and
+       * a refund is owed.
+       */
       settle_listing_fee_charge: {
         Args: { p_reference: string; p_succeeded: boolean; p_payload?: Json };
         Returns: Array<{
           settled: boolean;
-          reason: "succeeded" | "failed" | "unknown_reference" | "already_settled";
+          reason:
+            | "succeeded"
+            | "failed"
+            | "unknown_reference"
+            | "already_settled"
+            | "period_already_paid";
         }>;
       };
 

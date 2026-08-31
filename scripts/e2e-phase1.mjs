@@ -7,7 +7,13 @@
 //
 // Users are created through the admin API with email_confirm: true, so this
 // needs no working SMTP.
-import { loadEnv, makeChecker, keyHeaders, userHeaders } from "./lib/env.mjs";
+import {
+  loadEnv,
+  makeChecker,
+  keyHeaders,
+  userHeaders,
+  requireApiReachable,
+} from "./lib/env.mjs";
 
 const { url, anon, service } = loadEnv();
 const { check, finish } = makeChecker();
@@ -15,6 +21,8 @@ const { check, finish } = makeChecker();
 const svcH = keyHeaders(service);
 const anonH = keyHeaders(anon);
 const asUser = (token) => userHeaders(anon, token);
+
+await requireApiReachable(url);
 
 const stamp = Date.now();
 const createdUserIds = [];

@@ -114,9 +114,11 @@ export function PaymentForm({
               </p>
               <p className="mt-2 text-sm text-ink-muted">
                 Nothing to pay now. After the first month this listing is{" "}
-                <span className="tabular">{feeLabel}</span> a month to keep up,
-                and you can take it down at any time. Commission is separate and
-                only ever applies after a deal actually closes.
+                <span className="tabular">{feeLabel}</span> a month to keep up.
+                We&rsquo;ll ask for a card when that first month is nearly over,
+                and you can turn renewal off at any time from the listing&rsquo;s
+                page. Commission is separate and only ever applies after a deal
+                actually closes.
               </p>
               <div className="mt-4">
                 <Button onClick={claim} disabled={claiming} variant="money" fullWidth>
@@ -133,10 +135,15 @@ export function PaymentForm({
                 Our first 50 free months have all been taken, so the listing fee
                 applies to this one from the start.
               </p>
+              {/* Recurring billing has to be stated before the card is
+                  entered, not discovered on the second month's statement. */}
               <p className="mt-2 text-sm text-ink-muted">
-                This pays for the first month, and you can take the listing down
-                at any time. Commission is separate and only ever applies after a
-                deal actually closes.
+                This pays for the first month. We save your card and take{" "}
+                <span className="tabular">{feeLabel}</span> again each month
+                after that, until you turn renewal off — which you can do at any
+                time from the listing&rsquo;s page, keeping the month you have
+                already paid for. Commission is separate and only ever applies
+                after a deal actually closes.
               </p>
 
               {!paymentAvailable ? (

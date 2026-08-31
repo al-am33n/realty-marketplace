@@ -11,7 +11,7 @@
 // Reports the before and after state rather than succeeding silently, so it is
 // obvious exactly which account changed.
 import pg from "pg";
-import { loadEnv } from "./lib/env.mjs";
+import { loadEnv, connectDb } from "./lib/env.mjs";
 
 const email = process.argv[2];
 
@@ -30,7 +30,7 @@ const client = new pg.Client({
   connectionString: dbUrl,
   ssl: { rejectUnauthorized: false },
 });
-await client.connect();
+await connectDb(client, dbUrl);
 
 try {
   const { rows: before } = await client.query(
